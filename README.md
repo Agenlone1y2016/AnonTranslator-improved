@@ -10,20 +10,15 @@
 
 基于 [raindrop213/AnonTranslator](https://github.com/raindrop213/AnonTranslator) 的改进版 Chrome 扩展。它面向日文网页小说、生肉阅读和本地 HTML/EPUB 阅读场景，可以识别网页中的正文段落，复制原文，并使用 Google 或 DeepSeek 翻译。
 
-这个版本重点改进了 DeepSeek 翻译、日语假名标注、段落识别、翻译缓存和阅读时的交互体验。
+这个版本改进了 DeepSeek 翻译、日语假名标注、段落识别、翻译缓存和阅读时的交互体验。
 
 ### 功能亮点
 
+- 面向日文网页小说、本地 HTML/EPUB 和自建书库阅读场景。
 - 支持 Google 翻译和 DeepSeek API 翻译。
-- DeepSeek 首次翻译请求即可同时返回译文和词语级假名标注。
-- 假名标注使用真实 `<ruby><rt>` 标记渲染。
-- 假名标注显示在翻译区域中的原文行里，不改写网页原始正文。
-- 每个已翻译段落都有位于原文最后一行左侧外部的小三角，可以展开或收起该段的假名标注和译文。
-- 翻译结果可以保存在本机缓存中，保存期限可选 7 天到永久保留。
-- 命中缓存时会在左下角显示轻量提示，不遮住原文段落。
-- 改进正文段落识别，适配更多小说站点和本地阅读页面。
-- 点击段落不会强制滚动居中，阅读位置更稳定。
-- 切换段落时保留之前的翻译结果，方便反复回看。
+- DeepSeek 翻译可同时生成中文译文和日语假名标注。
+- 使用 ruby 假名标注辅助阅读，不改写网页原始正文。
+- 支持本地缓存翻译结果，刷新页面后可复用已有译文。
 - DeepSeek API Key 只保存在 `chrome.storage.local`，不会通过 Chrome Sync 同步。
 
 ### 安装
@@ -87,7 +82,7 @@ npm test
 
 ### 授权与来源
 
-本项目基于原版 AnonTranslator 修改，保留 MIT License。感谢原作者 [raindrop213](https://github.com/raindrop213) 的开源工作。
+本项目基于原版 AnonTranslator 修改，保留 MIT License。
 
 ---
 
@@ -99,16 +94,11 @@ This version focuses on DeepSeek translation, Japanese furigana rendering, parag
 
 ### Highlights
 
+- Built for Japanese web novels, local HTML/EPUB pages, and self-hosted reading libraries.
 - Supports Google Translate and DeepSeek API translation.
-- DeepSeek can return the translation and word-level furigana annotations in the first translation request.
-- Furigana is rendered with real `<ruby><rt>` markup.
-- Annotated Japanese source text is shown inside the translation area, without rewriting the original page content.
-- Each translated paragraph has an outside triangle toggle beside the original paragraph's last line to collapse or expand both the furigana line and translation text.
-- Translation results can be cached locally, with configurable retention from 7 days to permanent storage.
-- Cache hits show a subtle bottom-left notice instead of overlapping the paragraph text.
-- Improved readable paragraph detection for more novel sites and local reading pages.
-- Clicking a paragraph no longer forces the page to scroll to the center.
-- Previous paragraph translations stay visible when you move to another paragraph.
+- DeepSeek translation can return both Chinese translations and Japanese furigana annotations.
+- Uses ruby-based furigana to support reading without rewriting the original page content.
+- Caches translation results locally so previous translations can be reused after refreshing.
 - The DeepSeek API key is stored only in `chrome.storage.local` and is not synced through Chrome Sync.
 
 ### Installation
@@ -172,7 +162,7 @@ The tests check:
 
 ### License and Credits
 
-This project is modified from the original AnonTranslator and keeps the MIT License. Thanks to [raindrop213](https://github.com/raindrop213) for the original open-source project.
+This project is modified from the original AnonTranslator and keeps the MIT License.
 
 ---
 
