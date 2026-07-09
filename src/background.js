@@ -74,7 +74,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     translateText(text, from, to, translator, model)
       .then(result => sendResponse({ ok: true, ...result }))
       .catch(error => {
-        console.error(`[AnonTranslator] ${translator} translation failed:`, error);
+        console.error(`[AnonTranslator II] ${translator} translation failed:`, error);
         sendResponse({
           ok: false,
           error: error instanceof Error ? error.message : String(error)

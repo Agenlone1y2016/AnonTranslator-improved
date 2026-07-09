@@ -49,7 +49,7 @@ function loadSettings() {
     if (chrome.runtime.lastError || !settings || settings.error) {
       chrome.storage.sync.get(null, syncSettings => {
         if (chrome.runtime.lastError) {
-          console.error('[AnonTranslator] Failed to load sync settings:', chrome.runtime.lastError.message);
+          console.error('[AnonTranslator II] Failed to load sync settings:', chrome.runtime.lastError.message);
           showSaveState('error', 'error');
           return;
         }
@@ -64,7 +64,7 @@ function loadSettings() {
 
   chrome.storage.local.get(['deepseekApiKey'], localSettings => {
     if (chrome.runtime.lastError) {
-      console.error('[AnonTranslator] Failed to load local settings:', chrome.runtime.lastError.message);
+      console.error('[AnonTranslator II] Failed to load local settings:', chrome.runtime.lastError.message);
       showSaveState('error', 'error');
       return;
     }
@@ -121,7 +121,7 @@ function saveSettings() {
     if (pendingWrites === 0) {
       saveButton.disabled = false;
       if (errors.length > 0) {
-        console.error('[AnonTranslator] Failed to save settings:', errors.join('; '));
+        console.error('[AnonTranslator II] Failed to save settings:', errors.join('; '));
         showSaveState('error', 'error');
       } else {
         showSaveState('√', 'saved');

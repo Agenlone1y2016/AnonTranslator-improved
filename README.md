@@ -1,6 +1,6 @@
-# AnonTranslator Improved
+# AnonTranslator II
 
-![AnonTranslator icon](img/icon128.png)
+![AnonTranslator II icon](img/icon128.png)
 
 [中文](#中文) | [English](#english)
 
@@ -8,7 +8,7 @@
 
 ## 中文
 
-基于 [raindrop213/AnonTranslator](https://github.com/raindrop213/AnonTranslator) 的改进版 Chrome 扩展。它面向日文网页小说、生肉阅读和本地 HTML/EPUB 阅读场景，可以识别网页中的正文段落，复制原文，并使用 Google 或 DeepSeek 翻译。
+基于 [raindrop213/AnonTranslator](https://github.com/raindrop213/AnonTranslator) 的二代改进版 Chrome 扩展。它面向日文网页小说、生肉阅读和本地 HTML/EPUB 阅读场景，可以识别网页中的正文段落，复制原文，并使用 Google 或 DeepSeek 翻译。
 
 这个版本改进了 DeepSeek 翻译、日语假名标注、段落识别、翻译缓存和阅读时的交互体验。
 
@@ -23,7 +23,7 @@
 
 ### 安装
 
-1. 打开本仓库页面：[Agenlone1y2016/AnonTranslator-improved](https://github.com/Agenlone1y2016/AnonTranslator-improved)。
+1. 打开本仓库页面：[Agenlone1y2016/AnonTranslator-II](https://github.com/Agenlone1y2016/AnonTranslator-II)。
 2. 点击 `Code`，选择 `Download ZIP`，解压到本地。
 3. 打开 Chrome 的扩展程序页面：`chrome://extensions/`。
 4. 打开右上角的 `开发者模式`。
@@ -32,7 +32,7 @@
 也可以使用 Git：
 
 ```bash
-git clone https://github.com/Agenlone1y2016/AnonTranslator-improved.git
+git clone https://github.com/Agenlone1y2016/AnonTranslator-II.git
 ```
 
 然后在 Chrome 中加载克隆出来的文件夹。
@@ -88,7 +88,7 @@ npm test
 
 ## English
 
-AnonTranslator Improved is a modified Chrome extension based on [raindrop213/AnonTranslator](https://github.com/raindrop213/AnonTranslator). It is built for reading Japanese web novels, raw Japanese text, and local HTML/EPUB reading pages. The extension can detect readable text blocks on a page, copy the original text, and translate it with Google or DeepSeek.
+AnonTranslator II is a second-generation modified Chrome extension based on [raindrop213/AnonTranslator](https://github.com/raindrop213/AnonTranslator). It is built for reading Japanese web novels, raw Japanese text, and local HTML/EPUB reading pages. The extension can detect readable text blocks on a page, copy the original text, and translate it with Google or DeepSeek.
 
 This version focuses on DeepSeek translation, Japanese furigana rendering, paragraph detection, translation caching, and a smoother reading flow.
 
@@ -103,7 +103,7 @@ This version focuses on DeepSeek translation, Japanese furigana rendering, parag
 
 ### Installation
 
-1. Open this repository: [Agenlone1y2016/AnonTranslator-improved](https://github.com/Agenlone1y2016/AnonTranslator-improved).
+1. Open this repository: [Agenlone1y2016/AnonTranslator-II](https://github.com/Agenlone1y2016/AnonTranslator-II).
 2. Click `Code`, choose `Download ZIP`, and unzip the archive.
 3. Open Chrome's extensions page: `chrome://extensions/`.
 4. Enable `Developer mode`.
@@ -112,7 +112,7 @@ This version focuses on DeepSeek translation, Japanese furigana rendering, parag
 You can also clone the repository:
 
 ```bash
-git clone https://github.com/Agenlone1y2016/AnonTranslator-improved.git
+git clone https://github.com/Agenlone1y2016/AnonTranslator-II.git
 ```
 
 Then load the cloned folder from Chrome's extensions page.

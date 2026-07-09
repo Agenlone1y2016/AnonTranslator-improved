@@ -369,10 +369,10 @@ function copyTextToClipboard(text) {
                 showBottomNotification();
             }
         }).catch(error => {
-            console.warn('[AnonTranslator] Failed to copy text:', error);
+            console.warn('[AnonTranslator II] Failed to copy text:', error);
         });
     } else {
-        console.warn('[AnonTranslator] Document is not focused; copy skipped.');
+        console.warn('[AnonTranslator II] Document is not focused; copy skipped.');
     }
 }
 
@@ -611,7 +611,7 @@ function storageLocalGet(key) {
         }
         chrome.storage.local.get([key], result => {
             if (chrome.runtime.lastError) {
-                console.warn('[AnonTranslator] Failed to read translation cache:', chrome.runtime.lastError.message);
+                console.warn('[AnonTranslator II] Failed to read translation cache:', chrome.runtime.lastError.message);
                 resolve(undefined);
                 return;
             }
@@ -628,7 +628,7 @@ function storageLocalSet(values) {
         }
         chrome.storage.local.set(values, () => {
             if (chrome.runtime.lastError) {
-                console.warn('[AnonTranslator] Failed to write translation cache:', chrome.runtime.lastError.message);
+                console.warn('[AnonTranslator II] Failed to write translation cache:', chrome.runtime.lastError.message);
             }
             resolve();
         });
@@ -643,7 +643,7 @@ function storageLocalRemove(keys) {
         }
         chrome.storage.local.remove(keys, () => {
             if (chrome.runtime.lastError) {
-                console.warn('[AnonTranslator] Failed to prune translation cache:', chrome.runtime.lastError.message);
+                console.warn('[AnonTranslator II] Failed to prune translation cache:', chrome.runtime.lastError.message);
             }
             resolve();
         });
@@ -679,7 +679,7 @@ function pruneTranslationCache() {
     chrome.storage.local.get(null, result => {
         if (chrome.runtime.lastError || !result) {
             if (chrome.runtime.lastError) {
-                console.warn('[AnonTranslator] Failed to inspect translation cache:', chrome.runtime.lastError.message);
+                console.warn('[AnonTranslator II] Failed to inspect translation cache:', chrome.runtime.lastError.message);
             }
             return;
         }
@@ -778,7 +778,7 @@ function renderTranslationResult(translationDiv, textObj, response, color, trans
         );
         if (response.warning) {
             sourceLine.title = response.warning;
-            console.warn(`[AnonTranslator] ${response.warning}`);
+            console.warn(`[AnonTranslator II] ${response.warning}`);
         }
         body.insertBefore(sourceLine, body.firstChild);
     }
@@ -835,7 +835,7 @@ function renderTranslationError(translationDiv, color, error) {
     errorDiv.style.color = color;
     errorDiv.textContent = `翻译失败：${error}`;
     getTranslationBody(translationDiv).appendChild(errorDiv);
-    console.error('[AnonTranslator] Translation failed:', error);
+    console.error('[AnonTranslator II] Translation failed:', error);
 }
 
 function appendAnnotatedText(container, text, annotations) {
