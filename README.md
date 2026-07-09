@@ -96,6 +96,9 @@ This version focuses on DeepSeek translation, Japanese furigana rendering, parag
 - DeepSeek can return the translation and word-level furigana annotations in the first translation request.
 - Furigana is rendered with real `<ruby><rt>` markup.
 - Annotated Japanese source text is shown inside the translation area, without rewriting the original page content.
+- Each translated paragraph has an outside triangle toggle beside the original text line to collapse or expand both the furigana line and translation text.
+- Translation results can be cached locally, with configurable retention from 7 days to permanent storage.
+- Cache hits show a subtle bottom-left notice instead of overlapping the paragraph text.
 - Improved readable paragraph detection for more novel sites and local reading pages.
 - Clicking a paragraph no longer forces the page to scroll to the center.
 - Previous paragraph translations stay visible when you move to another paragraph.
@@ -131,8 +134,10 @@ Supported models:
 ### Usage
 
 1. Left-click a paragraph to copy and translate it.
-2. Right-click a paragraph to copy the highlighted sentence.
-3. When DeepSeek is enabled, the translation area also shows the original Japanese line with furigana annotations.
+2. Click the small triangle beside a translation to collapse or expand that paragraph's result.
+3. Right-click a paragraph to copy the highlighted sentence.
+4. When DeepSeek is enabled, the translation area also shows the original Japanese line with furigana annotations.
+5. In `Translator`, enable `Cache Translation` and choose `Cache Duration` to reuse previous results after refreshing a page.
 
 ### Recommended Use Cases
 
@@ -155,6 +160,7 @@ The tests check:
 - whether popup settings match the default settings;
 - whether DeepSeek model options stay in sync;
 - whether previous paragraph translations are preserved;
+- whether local translation caching and paragraph toggles remain wired;
 - Google and DeepSeek translation core logic and error handling.
 
 ### License And Credits

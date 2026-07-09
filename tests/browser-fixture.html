@@ -39,6 +39,8 @@
       ignoreFurigana: true,
       showCopyContent: false,
       extraImage: false,
+      translationCache: true,
+      translationCacheDays: 30,
       symbolPairs: "「」/『』/《》/“”/【】/（）",
       sentenceDelimiters: "。/！/？",
       sentenceThreshold: 50,
@@ -69,6 +71,36 @@
           },
           set(values, callback) {
             Object.assign(settings, values);
+            if (callback) callback();
+          }
+        },
+        local: {
+          readData() {
+            return JSON.parse(localStorage.getItem("anontranslator-fixture-local-storage") || "{}");
+          },
+          writeData(data) {
+            localStorage.setItem("anontranslator-fixture-local-storage", JSON.stringify(data));
+          },
+          get(keys, callback) {
+            const data = this.readData();
+            if (keys === null) {
+              callback({ ...data });
+              return;
+            }
+            const requestedKeys = Array.isArray(keys) ? keys : Object.keys(keys || {});
+            callback(Object.fromEntries(requestedKeys.map(key => [key, data[key]])));
+          },
+          set(values, callback) {
+            const data = this.readData();
+            Object.assign(data, values);
+            this.writeData(data);
+            if (callback) callback();
+          },
+          remove(keys, callback) {
+            const data = this.readData();
+            const requestedKeys = Array.isArray(keys) ? keys : [keys];
+            requestedKeys.forEach(key => delete data[key]);
+            this.writeData(data);
             if (callback) callback();
           }
         },

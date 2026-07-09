@@ -7,6 +7,7 @@ const defaults = JSON.parse(fs.readFileSync('config/defaultSettings.json', 'utf8
 const popup = fs.readFileSync('popup.html', 'utf8');
 const background = fs.readFileSync('src/background.js', 'utf8');
 const content = fs.readFileSync('src/content.js', 'utf8');
+const styles = fs.readFileSync('css/styles.css', 'utf8');
 
 const referencedFiles = [
   manifest.action?.default_popup,
@@ -55,6 +56,17 @@ for (const model of configuredModels) {
 assert.ok(configuredModels.includes(defaults.deepseekModel));
 
 assert.doesNotMatch(content, /\.innerHTML\s*=/, 'content script should not reparse page HTML');
+assert.match(content, /translationCachePrefix/, 'content script should define translation cache keys');
+assert.match(content, /chrome\.storage\.local\.set/, 'content script should persist translation cache locally');
+assert.match(content, /translationCacheDays/, 'content script should use the configured cache duration');
+assert.match(content, /return Infinity/, 'translation cache should support permanent retention');
+assert.match(content, /translationToggle/, 'content script should render per-paragraph translation toggles');
+assert.match(content, /showBottomNotification\('已读取缓存'/, 'cache hits should use the shared bottom-left toast');
+assert.doesNotMatch(content, /showBottomNotification\(text\)/, 'copy toast should not display the full selected paragraph');
+assert.match(styles, /\.anontranslator-translation-toggle[\s\S]*position:\s*absolute/, 'translation toggle should use document coordinates instead of scroll-following fixed positioning');
+assert.match(styles, /clip-path:\s*polygon/, 'translation toggle should draw a graphic triangle instead of using text');
+assert.doesNotMatch(background, /LEGACY_SETTING_KEYS/, 'background should not keep removed feature migration code');
+assert.doesNotMatch(background, /useWindowsTTS|useVITS|youdao|deepl|caiyun/, 'background should not reference removed providers');
 
 const applyBlueBorderSource = content.slice(
   content.indexOf('function applyBlueBorder'),

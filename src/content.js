@@ -28,6 +28,9 @@ const strictReadableSelector = [
 const readableSelector = `${strictReadableSelector},div,article,section,main`;
 const extensionClasses = {
     translation: 'anontranslator-translation',
+    translationCollapsed: 'anontranslator-translation-collapsed',
+    translationToggle: 'anontranslator-translation-toggle',
+    translationBody: 'anontranslator-translation-body',
     translationError: 'anontranslator-translation-error',
     sentence: 'anontranslator-sentence',
     splitSentences: 'anontranslator-split-sentences',
@@ -48,6 +51,8 @@ const originalVisualStyles = new WeakMap();
 // 保存句子拆分前的原始节点，切换段落或关闭插件时完整还原页面。
 const originalBlockContents = new WeakMap();
 const splitBlocks = new Set();
+const translationToggles = new WeakMap();
+const activeTranslationDivs = new Set();
 
 // 临时覆盖图片鼠标样式时，只恢复插件改动过的局部属性。
 const originalImageCursors = new WeakMap();
@@ -63,6 +68,11 @@ copyNotification.id = copyNotificationId;
 if (!copyNotification.isConnected) {
     document.documentElement.appendChild(copyNotification);
 }
+
+const translationCachePrefix = 'anontranslator.translationCache.v1:';
+const translationCacheMaxEntries = 500;
+const translationCachePruneIntervalMs = 5 * 60 * 1000;
+let lastTranslationCachePruneAt = 0;
 
 
 /* ------------------------------------------------------------总开关 */
@@ -106,7 +116,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
         if (currentHoveredBlock && currentHoveredBlock !== lastClickedPtag) {
             restoreOutline(currentHoveredBlock);
         }
-        document.querySelectorAll(`.${extensionClasses.translation}`).forEach(div => div.remove());
+        document.querySelectorAll(`.${extensionClasses.translation}`).forEach(removeTranslationDiv);
         Array.from(splitBlocks).forEach(restoreSentenceSplitting);
         if (lastClickedPtag) {
             restoreOutline(lastClickedPtag);
@@ -331,9 +341,8 @@ function cleanText(source, symbolPairs) {
     return { text: finalText, textFurigana: textFurigana, space: leadingSpaces, symbolPair: symbolPair };
 }
 
-// 显示复制内容函数
-function showCopyNotification(text, duration = 1000) {
-    copyNotification.textContent = `${text}`;
+function showBottomNotification(message = '已复制', duration = 800) {
+    copyNotification.textContent = message;
     copyNotification.classList.add('show');
 
     // 清除之前的定时器
@@ -357,7 +366,7 @@ function copyTextToClipboard(text) {
             : fallbackCopyText(text);
         copyPromise.then(() => {
             if (extensionSettings.showCopyContent) {
-                showCopyNotification(text);
+                showBottomNotification();
             }
         }).catch(error => {
             console.warn('[AnonTranslator] Failed to copy text:', error);
@@ -409,8 +418,389 @@ function copySentenceText(tag) {
 
 /* ------------------------------------------------------------翻译模块 */
 
+function getTranslationBody(translationDiv) {
+    let body = translationDiv.querySelector(`.${extensionClasses.translationBody}`);
+    if (!body) {
+        body = document.createElement('div');
+        body.className = extensionClasses.translationBody;
+        translationDiv.appendChild(body);
+    }
+    return body;
+}
+
+function updateTranslationToggle(translationDiv, collapsed) {
+    const toggle = translationToggles.get(translationDiv);
+    if (!toggle) return;
+
+    translationDiv.classList.toggle(extensionClasses.translationCollapsed, collapsed);
+    toggle.setAttribute('aria-expanded', String(!collapsed));
+    toggle.title = collapsed ? '展开翻译' : '收起翻译';
+    toggle.setAttribute('aria-label', collapsed ? '展开翻译' : '收起翻译');
+    positionTranslationToggle(translationDiv);
+}
+
+function createTranslationDiv() {
+    const translationDiv = document.createElement('div');
+    translationDiv.className = extensionClasses.translation;
+
+    const toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.className = extensionClasses.translationToggle;
+    toggle.tabIndex = 0;
+    toggle.addEventListener('click', event => {
+        event.preventDefault();
+        event.stopPropagation();
+        updateTranslationToggle(
+            translationDiv,
+            !translationDiv.classList.contains(extensionClasses.translationCollapsed)
+        );
+    });
+
+    translationToggles.set(translationDiv, toggle);
+    activeTranslationDivs.add(translationDiv);
+    document.documentElement.appendChild(toggle);
+    getTranslationBody(translationDiv);
+    updateTranslationToggle(translationDiv, false);
+    scheduleTranslationTogglePositions();
+    return translationDiv;
+}
+
+function removeTranslationDiv(translationDiv) {
+    const toggle = translationToggles.get(translationDiv);
+    if (toggle) {
+        toggle.remove();
+    }
+    translationToggles.delete(translationDiv);
+    activeTranslationDivs.delete(translationDiv);
+    translationDiv.remove();
+}
+
+function getOriginalContentLineRects(tag, translationDiv) {
+    const rects = [];
+    for (const child of Array.from(tag.childNodes)) {
+        if (child === translationDiv) {
+            continue;
+        }
+        if (
+            child.nodeType === Node.ELEMENT_NODE &&
+            child.classList.contains(extensionClasses.translation)
+        ) {
+            continue;
+        }
+
+        const range = document.createRange();
+        try {
+            range.selectNode(child);
+            rects.push(...Array.from(range.getClientRects()));
+        } finally {
+            range.detach();
+        }
+    }
+    return rects.filter(rect => rect.width > 0 && rect.height > 0);
+}
+
+function getLastOriginalLineRect(tag, translationDiv) {
+    const rects = getOriginalContentLineRects(tag, translationDiv);
+    if (rects.length > 0) {
+        return rects[rects.length - 1];
+    }
+    return tag.getBoundingClientRect();
+}
+
+function positionTranslationToggle(translationDiv) {
+    const toggle = translationToggles.get(translationDiv);
+    const tag = translationDiv.parentElement;
+    if (!toggle || !tag || !tag.isConnected || !translationDiv.isConnected) {
+        if (toggle && !translationDiv.isConnected) {
+            toggle.style.visibility = 'hidden';
+        }
+        return;
+    }
+
+    const lineRect = getLastOriginalLineRect(tag, translationDiv);
+    const toggleRect = toggle.getBoundingClientRect();
+    const toggleWidth = toggleRect.width || 32;
+    const toggleHeight = toggleRect.height || 32;
+    const gap = Math.max(6, Math.round(toggleWidth * 0.18));
+    const left = Math.round(window.scrollX + lineRect.left - toggleWidth - gap);
+    const top = Math.round(window.scrollY + lineRect.top + (lineRect.height - toggleHeight) / 2);
+    const outsideViewport =
+        lineRect.bottom < 0 ||
+        lineRect.top > window.innerHeight ||
+        lineRect.left - toggleWidth - gap + toggleWidth < 0 ||
+        lineRect.left - toggleWidth - gap > window.innerWidth;
+
+    toggle.style.visibility = outsideViewport ? 'hidden' : '';
+    toggle.style.color = getComputedStyle(tag).color;
+    toggle.style.left = `${left}px`;
+    toggle.style.top = `${top}px`;
+}
+
+function positionAllTranslationToggles() {
+    activeTranslationDivs.forEach(translationDiv => {
+        if (!translationDiv.isConnected) {
+            const toggle = translationToggles.get(translationDiv);
+            if (toggle) {
+                toggle.style.visibility = 'hidden';
+            }
+            return;
+        }
+        positionTranslationToggle(translationDiv);
+    });
+}
+
+function scheduleTranslationTogglePositions() {
+    requestAnimationFrame(positionAllTranslationToggles);
+}
+
+function normalizeTranslationCacheText(text) {
+    return String(text || '').replace(/\s+/g, ' ').trim();
+}
+
+function getPageCacheScope() {
+    try {
+        const url = new URL(window.location.href);
+        url.hash = '';
+        return url.href;
+    } catch (_) {
+        return window.location.href.split('#')[0];
+    }
+}
+
+function hashString(value) {
+    let hashA = 0xdeadbeef;
+    let hashB = 0x41c6ce57;
+    for (const character of Array.from(value)) {
+        const codePoint = character.codePointAt(0);
+        hashA = Math.imul(hashA ^ codePoint, 2654435761);
+        hashB = Math.imul(hashB ^ codePoint, 1597334677);
+    }
+    hashA = Math.imul(hashA ^ (hashA >>> 16), 2246822507) ^
+        Math.imul(hashB ^ (hashB >>> 13), 3266489909);
+    hashB = Math.imul(hashB ^ (hashB >>> 16), 2246822507) ^
+        Math.imul(hashA ^ (hashA >>> 13), 3266489909);
+    return (4294967296 * (2097151 & hashB) + (hashA >>> 0)).toString(36);
+}
+
+function getTranslationTextSignature(text) {
+    const normalizedText = normalizeTranslationCacheText(text);
+    return {
+        hash: hashString(normalizedText),
+        length: Array.from(normalizedText).length
+    };
+}
+
+function getTranslationCacheKey(text, translator, fromLang, toLang, model) {
+    const textSignature = getTranslationTextSignature(text);
+    const parts = [
+        getPageCacheScope(),
+        textSignature.hash,
+        translator,
+        fromLang || '',
+        toLang || '',
+        model || ''
+    ];
+    return `${translationCachePrefix}${parts.map(part => encodeURIComponent(String(part))).join(':')}`;
+}
+
+function storageLocalGet(key) {
+    return new Promise(resolve => {
+        if (typeof chrome === 'undefined' || !chrome.storage?.local?.get) {
+            resolve(undefined);
+            return;
+        }
+        chrome.storage.local.get([key], result => {
+            if (chrome.runtime.lastError) {
+                console.warn('[AnonTranslator] Failed to read translation cache:', chrome.runtime.lastError.message);
+                resolve(undefined);
+                return;
+            }
+            resolve(result?.[key]);
+        });
+    });
+}
+
+function storageLocalSet(values) {
+    return new Promise(resolve => {
+        if (typeof chrome === 'undefined' || !chrome.storage?.local?.set) {
+            resolve();
+            return;
+        }
+        chrome.storage.local.set(values, () => {
+            if (chrome.runtime.lastError) {
+                console.warn('[AnonTranslator] Failed to write translation cache:', chrome.runtime.lastError.message);
+            }
+            resolve();
+        });
+    });
+}
+
+function storageLocalRemove(keys) {
+    return new Promise(resolve => {
+        if (typeof chrome === 'undefined' || !chrome.storage?.local?.remove) {
+            resolve();
+            return;
+        }
+        chrome.storage.local.remove(keys, () => {
+            if (chrome.runtime.lastError) {
+                console.warn('[AnonTranslator] Failed to prune translation cache:', chrome.runtime.lastError.message);
+            }
+            resolve();
+        });
+    });
+}
+
+function getTranslationCacheTtlMs() {
+    const days = Number(extensionSettings.translationCacheDays);
+    if (!Number.isFinite(days) || days < 0) {
+        return 30 * 24 * 60 * 60 * 1000;
+    }
+    if (days === 0) {
+        return Infinity;
+    }
+    return days * 24 * 60 * 60 * 1000;
+}
+
+function isTranslationCacheExpired(cached, now = Date.now()) {
+    const ttlMs = getTranslationCacheTtlMs();
+    return Number.isFinite(ttlMs) && now - Number(cached?.createdAt) > ttlMs;
+}
+
+function pruneTranslationCache() {
+    const now = Date.now();
+    if (now - lastTranslationCachePruneAt < translationCachePruneIntervalMs) {
+        return;
+    }
+    lastTranslationCachePruneAt = now;
+
+    if (typeof chrome === 'undefined' || !chrome.storage?.local?.get) {
+        return;
+    }
+    chrome.storage.local.get(null, result => {
+        if (chrome.runtime.lastError || !result) {
+            if (chrome.runtime.lastError) {
+                console.warn('[AnonTranslator] Failed to inspect translation cache:', chrome.runtime.lastError.message);
+            }
+            return;
+        }
+
+        const entries = Object.entries(result)
+            .filter(([key]) => key.startsWith(translationCachePrefix))
+            .map(([key, value]) => ({
+                key,
+                createdAt: Number(value?.createdAt) || 0
+            }))
+            .sort((a, b) => b.createdAt - a.createdAt);
+
+        const ttlMs = getTranslationCacheTtlMs();
+        const expiredKeys = Number.isFinite(ttlMs)
+            ? entries
+                .filter(entry => now - entry.createdAt > ttlMs)
+                .map(entry => entry.key)
+            : [];
+        const overflowKeys = entries
+            .slice(translationCacheMaxEntries)
+            .map(entry => entry.key);
+        const keysToRemove = Array.from(new Set([...expiredKeys, ...overflowKeys]));
+        if (keysToRemove.length > 0) {
+            storageLocalRemove(keysToRemove);
+        }
+    });
+}
+
+async function getCachedTranslation(text, translator, fromLang, toLang, model) {
+    if (!extensionSettings.translationCache) return null;
+
+    const key = getTranslationCacheKey(text, translator, fromLang, toLang, model);
+    const cached = await storageLocalGet(key);
+    const textSignature = getTranslationTextSignature(text);
+    if (
+        !cached ||
+        cached.version !== 1 ||
+        cached.textHash !== textSignature.hash ||
+        cached.textLength !== textSignature.length ||
+        cached.provider !== translator ||
+        isTranslationCacheExpired(cached) ||
+        typeof cached.translatedText !== 'string' ||
+        !cached.translatedText
+    ) {
+        if (cached) {
+            storageLocalRemove([key]);
+        }
+        return null;
+    }
+
+    return {
+        translatedText: cached.translatedText,
+        provider: cached.provider,
+        furiganaAnnotations: Array.isArray(cached.furiganaAnnotations)
+            ? cached.furiganaAnnotations
+            : [],
+        warning: cached.warning
+    };
+}
+
+function cacheTranslation(text, translator, fromLang, toLang, model, response) {
+    if (!extensionSettings.translationCache || !response?.translatedText) return;
+
+    const key = getTranslationCacheKey(text, translator, fromLang, toLang, model);
+    const textSignature = getTranslationTextSignature(text);
+    const entry = {
+        version: 1,
+        page: getPageCacheScope(),
+        textHash: textSignature.hash,
+        textLength: textSignature.length,
+        provider: response.provider || translator,
+        from: fromLang || '',
+        to: toLang || '',
+        model: model || '',
+        translatedText: response.translatedText,
+        furiganaAnnotations: Array.isArray(response.furiganaAnnotations)
+            ? response.furiganaAnnotations
+            : [],
+        warning: typeof response.warning === 'string' ? response.warning : '',
+        createdAt: Date.now()
+    };
+    storageLocalSet({ [key]: entry }).then(pruneTranslationCache);
+}
+
+function renderTranslationResult(translationDiv, textObj, response, color, translator) {
+    const body = getTranslationBody(translationDiv);
+    const provider = response.provider || translator;
+
+    if (
+        provider === 'deepseek' &&
+        !body.querySelector(`.${extensionClasses.furiganaSource}`)
+    ) {
+        const sourceLine = createFuriganaSourceLine(
+            textObj,
+            response.furiganaAnnotations
+        );
+        if (response.warning) {
+            sourceLine.title = response.warning;
+            console.warn(`[AnonTranslator] ${response.warning}`);
+        }
+        body.insertBefore(sourceLine, body.firstChild);
+    }
+
+    const p = document.createElement('div');
+    p.style.color = color;
+    p.dataset.translationProvider = provider;
+    if (response.warning) {
+        p.title = response.warning;
+    }
+    if (textObj.symbolPair) {
+        p.textContent = textObj.space + textObj.symbolPair[0] + response.translatedText + textObj.symbolPair[1];
+    } else {
+        p.textContent = textObj.space + response.translatedText;
+    }
+    body.appendChild(p);
+    scheduleTranslationTogglePositions();
+}
+
 // 发送消息到背景脚本并获取翻译结果
-function requestTranslation(tag, translationDiv, text, fromLang, toLang, translator, color, callback, model) {
+function requestTranslation(tag, translationDiv, textObj, fromLang, toLang, translator, color, model) {
+    const text = textObj.text;
     chrome.runtime.sendMessage({ 
         action: "translate", 
         text: text, 
@@ -427,19 +817,12 @@ function requestTranslation(tag, translationDiv, text, fromLang, toLang, transla
             return;
         }
         if (response?.ok && response.translatedText) {
-            const p = document.createElement('div');
-            p.style.color = color;
-            p.dataset.translationProvider = response.provider || translator;
-            if (response.warning) {
-                p.title = response.warning;
-                console.warn(`[AnonTranslator] ${response.warning}`);
-            }
-            if (callback) {
-                callback(response.translatedText, p, response, translationDiv);
-            } else {
-                p.textContent = response.translatedText;
-            }
-            translationDiv.appendChild(p);
+            const normalizedResponse = {
+                ...response,
+                provider: response.provider || translator
+            };
+            renderTranslationResult(translationDiv, textObj, normalizedResponse, color, translator);
+            cacheTranslation(text, translator, fromLang, toLang, model, normalizedResponse);
         } else {
             renderTranslationError(translationDiv, color, response?.error || '翻译没有返回结果');
         }
@@ -451,7 +834,7 @@ function renderTranslationError(translationDiv, color, error) {
     errorDiv.className = extensionClasses.translationError;
     errorDiv.style.color = color;
     errorDiv.textContent = `翻译失败：${error}`;
-    translationDiv.appendChild(errorDiv);
+    getTranslationBody(translationDiv).appendChild(errorDiv);
     console.error('[AnonTranslator] Translation failed:', error);
 }
 
@@ -519,6 +902,19 @@ function createFuriganaSourceLine(textObj, annotations) {
     return sourceLine;
 }
 
+async function renderCachedOrRequestTranslation(tag, translationDiv, textObj, fromLang, toLang, translator, color, model) {
+    const cached = await getCachedTranslation(textObj.text, translator, fromLang, toLang, model);
+    if (!translationDiv.isConnected || !tag.contains(translationDiv)) {
+        return;
+    }
+    if (cached) {
+        renderTranslationResult(translationDiv, textObj, cached, color, translator);
+        showBottomNotification('已读取缓存', 900);
+        return;
+    }
+    requestTranslation(tag, translationDiv, textObj, fromLang, toLang, translator, color, model);
+}
+
 // 翻译文本并显示结果
 function translate(tag) {
     const textObj = cleanText(tag, parseStringToArray(extensionSettings.symbolPairs));
@@ -526,62 +922,37 @@ function translate(tag) {
 
     // 点击失败的段落时允许直接重试，不需要先切换到其他段落。
     if (existingTranslation?.querySelector(`.${extensionClasses.translationError}`)) {
-        existingTranslation.remove();
+        removeTranslationDiv(existingTranslation);
     }
 
     if (
         (extensionSettings.google || extensionSettings.deepseek) &&
         !tag.querySelector(`.${extensionClasses.translation}`)
     ) {
-        const translationDiv = document.createElement('div');
-        translationDiv.className = extensionClasses.translation;
+        const translationDiv = createTranslationDiv();
         tag.appendChild(translationDiv);
-
-        const translatedTextCallback = (translatedText, p, response, currentTranslationDiv) => {
-            if (
-                response?.provider === 'deepseek' &&
-                !currentTranslationDiv.querySelector(`.${extensionClasses.furiganaSource}`)
-            ) {
-                const sourceLine = createFuriganaSourceLine(
-                    textObj,
-                    response.furiganaAnnotations
-                );
-                if (response.warning) {
-                    sourceLine.title = response.warning;
-                    console.warn(`[AnonTranslator] ${response.warning}`);
-                }
-                currentTranslationDiv.insertBefore(sourceLine, currentTranslationDiv.firstChild);
-            }
-
-            if (textObj.symbolPair) {
-                p.textContent = textObj.space + textObj.symbolPair[0] + translatedText + textObj.symbolPair[1];
-            } else {
-                p.textContent = textObj.space + translatedText;
-            }
-        };
+        scheduleTranslationTogglePositions();
 
         if (extensionSettings.google) {
-            requestTranslation(
+            renderCachedOrRequestTranslation(
                 tag,
                 translationDiv,
-                textObj.text,
+                textObj,
                 extensionSettings.googleFrom,
                 extensionSettings.googleTo,
                 'google',
-                extensionSettings.googleColor,
-                translatedTextCallback
+                extensionSettings.googleColor
             );
         }
         if (extensionSettings.deepseek) {
-            requestTranslation(
+            renderCachedOrRequestTranslation(
                 tag,
                 translationDiv,
-                textObj.text,
+                textObj,
                 extensionSettings.deepseekFrom,
                 extensionSettings.deepseekTo,
                 'deepseek',
                 extensionSettings.deepseekColor,
-                translatedTextCallback,
                 extensionSettings.deepseekModel
             );
         }
@@ -652,6 +1023,7 @@ function splitTagSentences(tag, sentenceThreshold, sentenceDelimiters) {
     translationDivs.forEach(div => tag.appendChild(div));
     tag.classList.add(extensionClasses.splitSentences);
     splitBlocks.add(tag);
+    scheduleTranslationTogglePositions();
 }
 
 function restoreSentenceSplitting(tag) {
@@ -665,6 +1037,7 @@ function restoreSentenceSplitting(tag) {
     tag.classList.remove(extensionClasses.splitSentences);
     originalBlockContents.delete(tag);
     splitBlocks.delete(tag);
+    scheduleTranslationTogglePositions();
 }
 
 function restoreImageCursor(image) {
@@ -792,6 +1165,8 @@ function highlightAndCopyPtag(doc) {
     }, true);
 
     doc.addEventListener('click', handleClick, true);
+    window.addEventListener('scroll', scheduleTranslationTogglePositions, true);
+    window.addEventListener('resize', scheduleTranslationTogglePositions);
 }
 
 // 为文档添加鼠标监听器

@@ -5,14 +5,6 @@ const DEEPSEEK_TIMEOUT_MS = 45000;
 const MAX_TRANSLATION_CHARACTERS = 20000;
 const DEEPSEEK_MODELS = new Set(['deepseek-v4-flash', 'deepseek-v4-pro']);
 let defaultSettingsPromise = null;
-const LEGACY_SETTING_KEYS = [
-  'useWindowsTTS', 'winVoice', 'rate', 'pitch',
-  'useVITS', 'clipAPI', 'vitsAPI', 'vitsVoice', 'vitsLang',
-  'length', 'noise', 'noisew', 'max', 'streaming', 'readingInterval',
-  'youdao', 'youdaoColor', 'youdaoFrom', 'youdaoTo',
-  'deepl', 'deeplColor', 'deeplFrom', 'deeplTo',
-  'caiyun', 'caiyunColor', 'caiyunFrom', 'caiyunTo'
-];
 
 function loadDefaultSettings() {
   if (!defaultSettingsPromise) {
@@ -32,7 +24,7 @@ function loadDefaultSettings() {
   return defaultSettingsPromise;
 }
 
-// 升级时补齐新增配置，同时清理已经删除的 TTS 和旧翻译器设置。
+// 升级时补齐新增配置。
 chrome.runtime.onInstalled.addListener(() => {
   loadDefaultSettings().then(defaultSettings => {
     if (!defaultSettings) return;
@@ -54,11 +46,6 @@ chrome.runtime.onInstalled.addListener(() => {
           }
         });
       }
-      chrome.storage.sync.remove(LEGACY_SETTING_KEYS, () => {
-        if (chrome.runtime.lastError) {
-          console.error('Error removing legacy settings:', chrome.runtime.lastError.message);
-        }
-      });
     });
   });
 });

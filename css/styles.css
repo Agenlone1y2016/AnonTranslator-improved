@@ -35,10 +35,67 @@ ruby.anon-furigana > rt {
     text-align: center;
 }
 
-.anontranslator-translation,
-.anontranslator-translation > div {
-    display: block;
+.anontranslator-translation {
+    position: relative;
+    margin-top: 0.18em;
     text-align: inherit;
+}
+
+.anontranslator-translation-toggle {
+    all: initial;
+    box-sizing: border-box;
+    position: absolute;
+    z-index: 2147483646;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: max(2em, 28px);
+    height: max(2em, 28px);
+    color: inherit;
+    cursor: pointer;
+    font-size: inherit;
+    line-height: 1;
+    opacity: 0.64;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.anontranslator-translation-toggle:hover {
+    opacity: 0.9;
+}
+
+.anontranslator-translation-toggle:focus-visible {
+    outline: 2px solid currentColor;
+    outline-offset: 2px;
+}
+
+.anontranslator-translation-toggle::before {
+    content: "";
+    display: block;
+    width: max(0.95em, 14px);
+    height: max(0.95em, 14px);
+    background: currentColor;
+    clip-path: polygon(25% 10%, 82% 50%, 25% 90%);
+    transition: transform 0.16s ease;
+}
+
+.anontranslator-translation-toggle[aria-expanded="true"]::before {
+    transform: rotate(90deg);
+}
+
+.anontranslator-translation-body {
+    display: block;
+    min-width: 0;
+}
+
+.anontranslator-translation-collapsed {
+    display: block;
+    min-height: 0;
+    vertical-align: baseline;
+}
+
+.anontranslator-translation-collapsed .anontranslator-translation-body {
+    display: none;
 }
 
 .anontranslator-furigana-source-line {
