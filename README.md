@@ -4,7 +4,7 @@
 
 [中文](#中文) | [English](#english)
 
-![Preview](img/furigana-preview.png)
+![Preview](img/translation-preview.png)
 
 ## 中文
 
