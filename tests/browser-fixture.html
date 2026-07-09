@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AnonTranslator browser fixture</title>
+  <link rel="stylesheet" href="../css/styles.css">
+  <style>
+    body { font-family: sans-serif; max-width: 760px; margin: 40px auto; line-height: 1.8; }
+    .card { padding: 16px; margin: 16px 0; border: 1px solid #ddd; }
+  </style>
+</head>
+<body>
+  <h1>段落识别回归测试</h1>
+
+  <p id="styled-p" style="color: rgb(180, 20, 20); outline: 1px dotted orange; border-radius: 3px;">
+    <span id="nested-span">嵌套 span 的标准段落。第二句话。</span>
+  </p>
+
+  <div id="chapter" class="card">
+    <div id="div-p1">这是用 div 实现的第一段文字。</div>
+    <div id="div-p2"><span>这是用 div 和 span 实现的第二段文字。</span></div>
+  </div>
+
+  <article id="article-container" class="card">
+    <section id="section-container">
+      <div id="article-leaf">article 中的叶子文本块。</div>
+    </section>
+  </article>
+
+  <p id="furigana-p">明日は学校へ行った。五月は本を読んだ。</p>
+
+  <button id="action-button">页面自己的按钮</button>
+
+  <script>
+    const settings = {
+      pluginSwitch: true,
+      copy: false,
+      ignoreFurigana: true,
+      showCopyContent: false,
+      extraImage: false,
+      symbolPairs: "「」/『』/《》/“”/【】/（）",
+      sentenceDelimiters: "。/！/？",
+      sentenceThreshold: 50,
+      google: false,
+      deepseek: true,
+      deepseekColor: "#4D8DFF",
+      deepseekModel: "deepseek-v4-flash",
+      deepseekFrom: "ja",
+      deepseekTo: "zh-CN",
+      borderWidth: "2px",
+      borderStyle: "solid",
+      borderRadius: "8px",
+      freeBorderColor: "#225D2E",
+      selectedBorderColor: "#94B505",
+      sentenceColor: "#d4e725",
+      scrollSwitch: true,
+      scrollIntoView: "auto"
+    };
+
+    window.chrome = {
+      storage: {
+        sync: {
+          get(keys, callback) {
+            if (keys === null) {
+              callback({ ...settings });
+              return;
+            }
+            const requestedKeys = Array.isArray(keys) ? keys : Object.keys(keys || {});
+            callback(Object.fromEntries(requestedKeys.map(key => [key, settings[key]])));
+          },
+          set(values, callback) {
+            Object.assign(settings, values);
+            if (callback) callback();
+          }
+        },
+        onChanged: { addListener() {} }
+      },
+      runtime: {
+        lastError: null,
+        sendMessage(message, callback) {
+          if (message.type === "getSettings") {
+            if (callback) callback({ ...settings });
+            return;
+          }
+          document.body.dataset.lastTranslationMessage = JSON.stringify(message);
+          document.body.dataset.translationCount =
+            String(Number(document.body.dataset.translationCount || "0") + 1);
+          if (callback) {
+            callback({
+              ok: true,
+              translatedText: "明天去学校。五月读了书。",
+              provider: "deepseek",
+              furiganaAnnotations: message.text.includes("明日") ? [
+                  { start: 0, end: 2, reading: "あした" },
+                  { start: 3, end: 5, reading: "がっこう" },
+                  { start: 6, end: 9, reading: "いった" },
+                  { start: 10, end: 12, reading: "さつき" },
+                  { start: 13, end: 14, reading: "ほん" },
+                  { start: 15, end: 18, reading: "よんだ" }
+              ] : []
+            });
+          }
+        }
+      }
+    };
+  </script>
+  <script src="../src/content.js?v=20260624-2"></script>
+</body>
+</html>

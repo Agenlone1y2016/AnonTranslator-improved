@@ -1,0 +1,18 @@
+{
+  "name": "anontranslator-improved",
+  "version": "1.3.1",
+  "private": true,
+  "description": "Improved AnonTranslator Chrome extension for Japanese reading and translation.",
+  "type": "commonjs",
+  "scripts": {
+    "test": "node tests/project.test.cjs && node tests/background.test.cjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Agenlone1y2016/AnonTranslator-improved.git"
+  }
+}

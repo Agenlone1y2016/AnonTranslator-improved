@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AnonTranslator Settings</title>
+    <link rel="stylesheet" href="css/popup.css" />
+  </head>
+  <body>
+    <form id="settingsForm">
+      <div class="upper-part">
+        <label class="switch">
+          <input type="checkbox" id="pluginSwitch" aria-label="启用 AnonTranslator">
+          <span class="slider round">
+            <span class="on">ON</span>
+            <span class="off">OFF</span>
+          </span>
+        </label>
+        <button class="save" type="submit" aria-label="保存设置" aria-live="polite">save</button>
+        <p class="text-h1"><span id="extensionVersion"></span></p>
+        <p class="text-s1">By: raindrop213</p>
+      </div>
+
+      <div class="tabs">
+        <!-- Copy Tab -->
+        <input type="radio" id="tab1" name="tab" class="tab" checked />
+        <div class="tab-header">
+          <label for="tab1" class="tab-label">Copy</label>
+          <input id="copy" class="cmn-toggle cmn-toggle-round-flat" type="checkbox">
+          <label for="copy" aria-label="启用复制"></label>
+        </div>
+        <div class="tab-content">
+          <div class="settings">
+            <label>Ignore Furigana: 忽略振假名 <input type="checkbox" id="ignoreFurigana" /></label>
+          </div>
+          <div class="settings">
+            <label>Show Copy Content: 显示复制内容 <input type="checkbox" id="showCopyContent" /></label>
+          </div>
+          <div class="settings">
+            <label>Extract Picture: 点击提取图片 <input type="checkbox" id="extraImage" /></label>
+          </div>
+          <div class="settings">
+            <label for="symbolPairs">Paragraph Symbol Pairs: 忽略首尾符号对</label>
+            <input type="text" id="symbolPairs" />
+          </div>
+          <div class="settings">
+            <label for="sentenceDelimiters">Sentence Delimiters: 断句符号</label>
+            <input type="text" id="sentenceDelimiters" />
+          </div>
+          <div class="settings">
+            <label for="sentenceThreshold">Segmentation Threshold: 断句字数阈值</label>
+            <input type="number" id="sentenceThreshold" min="1" step="1" />
+          </div>
+        </div>
+
+        <!-- Translator Tab -->
+        <input type="radio" id="tab2" name="tab" class="tab" />
+        <div class="tab-header">
+          <label for="tab2" class="tab-label">Translator</label>
+        </div>
+        <div class="tab-content">
+          <input type="checkbox" id="tabGoogle" name="translatorTab" class="tab" checked />
+          <div class="tab-header tab-header-color">
+            <label for="tabGoogle" class="tab-label">Google</label>
+            <input id="google" class="cmn-toggle cmn-toggle-round-flat" type="checkbox">
+            <label for="google" aria-label="启用 Google 翻译"></label>
+          </div>
+          <div class="tab-content">
+            <div class="settings">
+              <label>Google Color: <input type="color" id="googleColor" /></label>
+            </div>
+            <div class="settings">
+              <label for="googleFrom">From:</label>
+              <select id="googleFrom">
+                <option value="auto">auto</option>
+                <option value="ja">ja</option>
+                <option value="zh-CN">zh</option>
+                <option value="zh-TW">cht</option>
+                <option value="en">en</option>
+                <option value="ko">ko</option>
+              </select>
+            </div>
+            <div class="settings">
+              <label for="googleTo">To:</label>
+              <select id="googleTo">
+                <option value="zh-CN">zh</option>
+                <option value="zh-TW">cht</option>
+                <option value="ja">ja</option>
+                <option value="en">en</option>
+                <option value="ko">ko</option>
+              </select>
+            </div>
+          </div>
+
+          <input type="checkbox" id="tabDeepSeek" name="translatorTab" class="tab" />
+          <div class="tab-header tab-header-color">
+            <label for="tabDeepSeek" class="tab-label">DeepSeek</label>
+            <input id="deepseek" class="cmn-toggle cmn-toggle-round-flat" type="checkbox">
+            <label for="deepseek" aria-label="启用 DeepSeek 翻译"></label>
+          </div>
+          <div class="tab-content">
+            <div class="settings">
+              <label>DeepSeek Color: <input type="color" id="deepseekColor" /></label>
+            </div>
+            <div class="settings">
+              <label for="deepseekApiKey">API Key:</label>
+              <input
+                type="password"
+                id="deepseekApiKey"
+                placeholder="sk-..."
+                autocomplete="new-password"
+                spellcheck="false"
+              />
+              <p class="text-s2">密钥仅保存在本机，不会通过 Chrome Sync 同步。</p>
+            </div>
+            <div class="settings">
+              <label for="deepseekModel">Model:</label>
+              <select id="deepseekModel">
+                <option value="deepseek-v4-flash">deepseek-v4-flash</option>
+                <option value="deepseek-v4-pro">deepseek-v4-pro</option>
+              </select>
+            </div>
+            <div class="settings">
+              <label for="deepseekFrom">From:</label>
+              <select id="deepseekFrom">
+                <option value="auto">auto</option>
+                <option value="ja">ja</option>
+                <option value="zh-CN">zh</option>
+                <option value="zh-TW">cht</option>
+                <option value="en">en</option>
+                <option value="ko">ko</option>
+              </select>
+            </div>
+            <div class="settings">
+              <label for="deepseekTo">To:</label>
+              <select id="deepseekTo">
+                <option value="zh-CN">zh</option>
+                <option value="zh-TW">cht</option>
+                <option value="ja">ja</option>
+                <option value="en">en</option>
+                <option value="ko">ko</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- Style Tab -->
+        <input type="radio" id="tab3" name="tab" class="tab" />
+        <div class="tab-header">
+          <label for="tab3" class="tab-label">Style</label>
+        </div>
+        <div class="tab-content">
+          <div class="settings">
+            <label>Border Width: 框宽度<input type="text" id="borderWidth" /></label>
+          </div>
+          <div class="settings">
+            <label>Border Style: 框样式
+              <select id="borderStyle">
+                <option value="none">None</option>
+                <option value="solid">Solid</option>
+                <option value="dotted">Dotted</option>
+                <option value="dashed">Dashed</option>
+                <option value="double">Double</option>
+                <option value="groove">Groove</option>
+                <option value="ridge">Ridge</option>
+                <option value="inset">Inset</option>
+                <option value="outset">Outset</option>
+              </select>
+            </label>
+          </div>
+          <div class="settings">
+            <label>Border Radius: 框圆角<input type="text" id="borderRadius" /></label>
+          </div>
+          <div class="settings">
+            <label>Free Border Color: 预选框 <input type="color" id="freeBorderColor"/></label>
+          </div>
+          <div class="settings">
+            <label>Selected Border Color: 激活框 <input type="color" id="selectedBorderColor"/></label>
+          </div>
+          <div class="settings">
+            <label>Selected Sentence Color: 预选句子 <input type="color" id="sentenceColor"/></label>
+          </div>
+          <div class="settings">
+            <label>Keyboard Scroll: 键盘切换段落时跟随 <input type="checkbox" id="scrollSwitch" /></label>
+          </div>
+          <div class="settings">
+            <label for="scrollIntoView">Scroll behavior: 跳转过程</label>
+            <select id="scrollIntoView">
+              <option value="auto">auto</option>
+              <option value="smooth">smooth</option>
+              <option value="instant">instant</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Guide Tab -->
+        <input type="radio" id="tab4" name="tab" class="tab" />
+        <div class="tab-header">
+          <label for="tab4" class="tab-label">Guide</label>
+        </div>
+        <div class="tab-content">
+          <h2>使用说明</h2>
+          <ul class="custom-list">
+            <li>左键点击文本段落：复制并翻译。</li>
+            <li>启用 DeepSeek 时，一次请求同时显示译文和词语级假名原文行。</li>
+            <li>右键点击高亮句子：复制该句。</li>
+            <li><kbd>Num 0</kbd> 或 <kbd>F1</kbd>：重新复制当前段落。</li>
+            <li><kbd>↑</kbd>/<kbd>↓</kbd> 或 <kbd>Num 2</kbd>/<kbd>Num 1</kbd>：切换段落并复制、翻译。</li>
+          </ul>
+          <p>DeepSeek API Key 可在 <a href="https://platform.deepseek.com/" target="_blank" rel="noopener noreferrer">DeepSeek Platform↗</a> 创建。</p>
+        </div>
+      </div>
+    </form>
+
+    <script src="src/popup.js"></script>
+  </body>
+</html>
