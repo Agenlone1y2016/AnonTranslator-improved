@@ -53,11 +53,7 @@ git clone https://github.com/Agenlone1y2016/AnonTranslator-improved.git
 
 1. 左键点击段落：复制并翻译当前文本段落。
 2. 右键点击段落：复制高亮句子。
-3. 按 <kbd>Num 0</kbd> 或 <kbd>F1</kbd>：重新复制当前文本段落。
-4. 按 <kbd>↑</kbd>/<kbd>↓</kbd>：切换段落，并复制、翻译；备用键位为 <kbd>Num 2</kbd>/<kbd>Num 1</kbd>。
-5. 启用 DeepSeek 时，翻译区域会额外显示带假名标注的原文行。
-
-通过剪贴板还可以搭配 [LunaTranslator](https://github.com/HIllya51/LunaTranslator) 做多方翻译、语素分析、查词和 Anki 工作流。
+3. 启用 DeepSeek 时，翻译区域会额外显示带假名标注的原文行。
 
 ### 适合场景
 
@@ -68,7 +64,7 @@ git clone https://github.com/Agenlone1y2016/AnonTranslator-improved.git
 
 ### 开发与测试
 
-本项目没有运行时 npm 依赖。需要 Node.js 20 或更高版本。
+普通用户安装和使用扩展不需要 npm 或 Node.js。只有开发者运行测试时需要 Node.js 20 或更高版本。
 
 ```bash
 npm test
@@ -85,8 +81,6 @@ npm test
 ### 授权与来源
 
 本项目基于原版 AnonTranslator 修改，保留 MIT License。感谢原作者 [raindrop213](https://github.com/raindrop213) 的开源工作。
-
-原版 Chrome 商店页面：[AnonTranslator](https://chromewebstore.google.com/detail/anontranslator/echegehpmakkcfcadfjljpcallkhpldi)
 
 ---
 
@@ -138,11 +132,7 @@ Supported models:
 
 1. Left-click a paragraph to copy and translate it.
 2. Right-click a paragraph to copy the highlighted sentence.
-3. Press <kbd>Num 0</kbd> or <kbd>F1</kbd> to copy the current paragraph again.
-4. Press <kbd>↑</kbd>/<kbd>↓</kbd> to move between paragraphs, copy, and translate. Alternative keys are <kbd>Num 2</kbd>/<kbd>Num 1</kbd>.
-5. When DeepSeek is enabled, the translation area also shows the original Japanese line with furigana annotations.
-
-The clipboard workflow also works well with [LunaTranslator](https://github.com/HIllya51/LunaTranslator) for multi-engine translation, parsing, dictionary lookup, and Anki workflows.
+3. When DeepSeek is enabled, the translation area also shows the original Japanese line with furigana annotations.
 
 ### Recommended Use Cases
 
@@ -153,7 +143,7 @@ The clipboard workflow also works well with [LunaTranslator](https://github.com/
 
 ### Development And Testing
 
-This project has no runtime npm dependencies. Node.js 20 or newer is required.
+Users do not need npm or Node.js to install and use the extension. Node.js 20 or newer is only required for developers who want to run the tests.
 
 ```bash
 npm test
@@ -170,8 +160,6 @@ The tests check:
 ### License And Credits
 
 This project is modified from the original AnonTranslator and keeps the MIT License. Thanks to [raindrop213](https://github.com/raindrop213) for the original open-source project.
-
-Original Chrome Web Store page: [AnonTranslator](https://chromewebstore.google.com/detail/anontranslator/echegehpmakkcfcadfjljpcallkhpldi)
 
 ---
 

@@ -71,7 +71,7 @@ function initializeSettings(data) {
     Object.assign(extensionSettings, data);
     pluginEnabled = Boolean(extensionSettings.pluginSwitch);
     if (pluginEnabled) {
-        // 启动鼠标和键盘监听器
+        // 启动鼠标监听器
         addMouseListener(document);
     }
 }
@@ -590,25 +590,6 @@ function translate(tag) {
 
 /* ------------------------------------------------------------用户界面交互模块 */
 
-// 获取下一个或上一个非空标签
-function getValidTag(currentTag, direction = 'down') {
-    const root = currentTag.getRootNode();
-    if (!root || typeof root.querySelectorAll !== 'function') {
-        return null;
-    }
-
-    const readableBlocks = Array.from(root.querySelectorAll(readableSelector)).filter(isReadableBlock);
-    const currentIndex = readableBlocks.indexOf(currentTag);
-    if (currentIndex === -1) {
-        return null;
-    }
-
-    return direction === 'down'
-        ? readableBlocks[currentIndex + 1] || null
-        : readableBlocks[currentIndex - 1] || null;
-}
-
-
 // 按标点和长度拆分纯文本，并用 DOM API 创建安全的句子节点。
 function createSentenceFragment(text, sentenceThreshold, sentenceDelimiters) {
     const fragment = document.createDocumentFragment();
@@ -729,7 +710,7 @@ function handleClick(event) {
 }
 
 // 为指定标签添加激活框
-function applyBlueBorder(tag, callback, options = {}) {
+function applyBlueBorder(tag, callback) {
     if (!pluginEnabled || !tag.isConnected) return;
 
     // 如果有上一个被点击的标签且不是当前标签
@@ -760,14 +741,6 @@ function applyBlueBorder(tag, callback, options = {}) {
         extensionSettings.borderRadius
     );
     
-    // 鼠标点击时目标已经可见，不改变阅读位置。键盘切换时才做最小必要滚动。
-    if (extensionSettings.scrollSwitch && options.scroll) {
-        const behavior = ['auto', 'smooth', 'instant'].includes(extensionSettings.scrollIntoView)
-            ? extensionSettings.scrollIntoView
-            : 'auto';
-        tag.scrollIntoView({ behavior, block: 'nearest', inline: 'nearest' });
-    }
-
     if (callback) callback();
 }
 
@@ -821,47 +794,12 @@ function highlightAndCopyPtag(doc) {
     doc.addEventListener('click', handleClick, true);
 }
 
-// 为文档添加鼠标和键盘监听器
+// 为文档添加鼠标监听器
 function addMouseListener(doc) {
     if (!doc || initializedDocuments.has(doc)) return;
     initializedDocuments.add(doc);
 
     highlightAndCopyPtag(doc);
-
-    // 键盘事件，包括箭头键和数字键盘 0
-    doc.addEventListener('keydown', function(event) {
-        if (!pluginEnabled) return;
-
-        const eventTarget = event.target instanceof Element ? event.target : null;
-        if (
-            !lastClickedPtag ||
-            eventTarget?.closest('input,textarea,select,[contenteditable="true"]')
-        ) {
-            return;
-        }
-
-        const isNext = event.key === 'ArrowDown' || event.code === 'Numpad1';
-        const isPrevious = event.key === 'ArrowUp' || event.code === 'Numpad2';
-        if (isNext || isPrevious) {
-            const newTag = getValidTag(lastClickedPtag, isNext ? 'down' : 'up');
-            if (newTag) {
-                event.preventDefault();
-                applyBlueBorder(newTag, () => {
-                    copyBlockText(newTag);
-                    translate(newTag);
-                }, { scroll: true });
-            }
-            return;
-        }
-
-        if (
-            event.key === 'F1' ||
-            event.code === 'Numpad0'
-        ) {
-            event.preventDefault();
-            copyBlockText(lastClickedPtag);
-        }
-    });
 
     // 仅在扩展生成的句子上接管右键，用于复制当前句子。
     doc.addEventListener('contextmenu', function(event) {
