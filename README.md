@@ -10,13 +10,17 @@
 
 基于 [raindrop213/AnonTranslator](https://github.com/raindrop213/AnonTranslator) 的改进版 Chrome 扩展。它面向日文网页小说、生肉阅读和本地 HTML/EPUB 阅读场景，可以识别网页中的正文段落，复制原文，并使用 Google 或 DeepSeek 翻译。
 
-这个版本重点改进了 DeepSeek 翻译、日语假名标注、段落识别和阅读时的交互体验。
+这个版本重点改进了 DeepSeek 翻译、日语假名标注、段落识别、翻译缓存和阅读时的交互体验。
 
 ### 功能亮点
 
 - 支持 Google 翻译和 DeepSeek API 翻译。
-- DeepSeek 首次翻译时同时返回译文和词语级假名标注，使用真实 `<ruby><rt>` 渲染。
+- DeepSeek 首次翻译请求即可同时返回译文和词语级假名标注。
+- 假名标注使用真实 `<ruby><rt>` 标记渲染。
 - 假名标注显示在翻译区域中的原文行里，不改写网页原始正文。
+- 每个已翻译段落都有位于原文最后一行左侧外部的小三角，可以展开或收起该段的假名标注和译文。
+- 翻译结果可以保存在本机缓存中，保存期限可选 7 天到永久保留。
+- 命中缓存时会在左下角显示轻量提示，不遮住原文段落。
 - 改进正文段落识别，适配更多小说站点和本地阅读页面。
 - 点击段落不会强制滚动居中，阅读位置更稳定。
 - 切换段落时保留之前的翻译结果，方便反复回看。
@@ -52,8 +56,10 @@ git clone https://github.com/Agenlone1y2016/AnonTranslator-improved.git
 ### 使用方式
 
 1. 左键点击段落：复制并翻译当前文本段落。
-2. 右键点击段落：复制高亮句子。
-3. 启用 DeepSeek 时，翻译区域会额外显示带假名标注的原文行。
+2. 点击翻译结果旁的小三角：展开或收起该段的假名标注和译文。
+3. 右键点击段落：复制高亮句子。
+4. 启用 DeepSeek 时，翻译区域会额外显示带假名标注的原文行。
+5. 在 `Translator` 中启用 `Cache Translation` 并选择 `Cache Duration`，刷新页面后可复用之前的翻译结果。
 
 ### 适合场景
 
@@ -76,6 +82,7 @@ npm test
 - popup 设置项和默认配置是否一致；
 - DeepSeek 模型配置是否同步；
 - 翻译切换时是否保留旧段落结果；
+- 本地翻译缓存和段落展开/收起按钮是否仍然接好；
 - Google/DeepSeek 翻译核心逻辑和错误处理。
 
 ### 授权与来源
@@ -88,7 +95,7 @@ npm test
 
 AnonTranslator Improved is a modified Chrome extension based on [raindrop213/AnonTranslator](https://github.com/raindrop213/AnonTranslator). It is built for reading Japanese web novels, raw Japanese text, and local HTML/EPUB reading pages. The extension can detect readable text blocks on a page, copy the original text, and translate it with Google or DeepSeek.
 
-This version focuses on DeepSeek translation, Japanese furigana rendering, paragraph detection, and a smoother reading flow.
+This version focuses on DeepSeek translation, Japanese furigana rendering, paragraph detection, translation caching, and a smoother reading flow.
 
 ### Highlights
 
@@ -96,7 +103,7 @@ This version focuses on DeepSeek translation, Japanese furigana rendering, parag
 - DeepSeek can return the translation and word-level furigana annotations in the first translation request.
 - Furigana is rendered with real `<ruby><rt>` markup.
 - Annotated Japanese source text is shown inside the translation area, without rewriting the original page content.
-- Each translated paragraph has an outside triangle toggle beside the original text line to collapse or expand both the furigana line and translation text.
+- Each translated paragraph has an outside triangle toggle beside the original paragraph's last line to collapse or expand both the furigana line and translation text.
 - Translation results can be cached locally, with configurable retention from 7 days to permanent storage.
 - Cache hits show a subtle bottom-left notice instead of overlapping the paragraph text.
 - Improved readable paragraph detection for more novel sites and local reading pages.
@@ -146,7 +153,7 @@ Supported models:
 - Self-hosted libraries such as Calibre-web.
 - Other Japanese reading pages that are mainly organized as text paragraphs.
 
-### Development And Testing
+### Development and Testing
 
 Users do not need npm or Node.js to install and use the extension. Node.js 20 or newer is only required for developers who want to run the tests.
 
@@ -163,7 +170,7 @@ The tests check:
 - whether local translation caching and paragraph toggles remain wired;
 - Google and DeepSeek translation core logic and error handling.
 
-### License And Credits
+### License and Credits
 
 This project is modified from the original AnonTranslator and keeps the MIT License. Thanks to [raindrop213](https://github.com/raindrop213) for the original open-source project.
 
