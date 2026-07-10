@@ -54,7 +54,7 @@ git clone https://github.com/Agenlone1y2016/AnonTranslator-II.git
 2. 点击翻译结果旁的小三角：展开或收起该段的假名标注和译文。
 3. 右键点击段落：复制高亮句子。
 4. 启用 DeepSeek 时，翻译区域会额外显示带假名标注的原文行。
-5. 在 `Translator` 中启用 `Cache Translation` 并选择 `Cache Duration`，刷新页面后可复用之前的翻译结果。
+5. 在 `Translator` 中启用 `Cache Translation` 并选择 `Cache Duration`，刷新页面后可复用之前的翻译结果；`Clear Cache` 按钮可随时清除本机已保存的译文。
 
 ### 适合场景
 
@@ -68,16 +68,15 @@ git clone https://github.com/Agenlone1y2016/AnonTranslator-II.git
 普通用户安装和使用扩展不需要 npm 或 Node.js。只有开发者运行测试时需要 Node.js 20 或更高版本。
 
 ```bash
+npm install
 npm test
 ```
 
 测试会检查：
 
-- `manifest.json` 引用的文件是否存在；
-- popup 设置项和默认配置是否一致；
-- DeepSeek 模型配置是否同步；
-- 翻译切换时是否保留旧段落结果；
-- 本地翻译缓存和段落展开/收起按钮是否仍然接好；
+- `manifest.json` 引用的文件是否存在，扩展与 npm 包版本号是否一致；
+- popup 设置项和默认配置是否一致，DeepSeek 模型配置是否同步；
+- content 脚本在模拟浏览器（jsdom）中的真实行为：段落识别、翻译渲染与折叠、引号剥离、句子拆分与还原、翻译缓存的写入/命中/旧版清理、扩展重载后的降级提示；
 - Google/DeepSeek 翻译核心逻辑和错误处理。
 
 ### 授权与来源
@@ -134,7 +133,7 @@ Supported models:
 2. Click the small triangle beside a translation to collapse or expand that paragraph's result.
 3. Right-click a paragraph to copy the highlighted sentence.
 4. When DeepSeek is enabled, the translation area also shows the original Japanese line with furigana annotations.
-5. In `Translator`, enable `Cache Translation` and choose `Cache Duration` to reuse previous results after refreshing a page.
+5. In `Translator`, enable `Cache Translation` and choose `Cache Duration` to reuse previous results after refreshing a page; the `Clear Cache` button removes all locally stored translations at any time.
 
 ### Recommended Use Cases
 
@@ -148,16 +147,15 @@ Supported models:
 Users do not need npm or Node.js to install and use the extension. Node.js 20 or newer is only required for developers who want to run the tests.
 
 ```bash
+npm install
 npm test
 ```
 
 The tests check:
 
-- whether every file referenced by `manifest.json` exists;
-- whether popup settings match the default settings;
-- whether DeepSeek model options stay in sync;
-- whether previous paragraph translations are preserved;
-- whether local translation caching and paragraph toggles remain wired;
+- whether every file referenced by `manifest.json` exists and the extension version matches the npm package version;
+- whether popup settings match the default settings and DeepSeek model options stay in sync;
+- real content-script behavior in a simulated browser DOM (jsdom): paragraph detection, translation rendering and collapsing, quote stripping, sentence splitting and restoration, translation cache write/hit/legacy cleanup, and graceful degradation after the extension is reloaded;
 - Google and DeepSeek translation core logic and error handling.
 
 ### License and Credits

@@ -247,6 +247,20 @@ input[type="checkbox"] {
   accent-color: var(--color1);
 }
 
+/* 清除翻译缓存按钮 */
+.clear-cache {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 5px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.clear-cache:disabled {
+  cursor: wait;
+  opacity: 0.75;
+}
+
 .text-h1 {
   display: contents;
   font-size: 20px;

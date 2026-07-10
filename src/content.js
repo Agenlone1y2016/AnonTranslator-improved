@@ -64,12 +64,19 @@ let currentHoveredImage = null;
 // 存储定时器的变量
 let notificationTimeout;
 
-// 创建并添加复制通知元素到文档
+// 复制/缓存提示元素按需创建，未用到时不向页面注入任何节点。
 const copyNotificationId = 'anontranslator-copy-notification';
-const copyNotification = document.getElementById(copyNotificationId) || document.createElement('div');
-copyNotification.id = copyNotificationId;
-if (!copyNotification.isConnected) {
-    document.documentElement.appendChild(copyNotification);
+let copyNotification = null;
+
+function ensureCopyNotification() {
+    if (!copyNotification) {
+        copyNotification = document.getElementById(copyNotificationId) || document.createElement('div');
+        copyNotification.id = copyNotificationId;
+    }
+    if (!copyNotification.isConnected) {
+        document.documentElement.appendChild(copyNotification);
+    }
+    return copyNotification;
 }
 
 const translationCachePrefix = 'anontranslator.translationCache.v2:';
@@ -130,7 +137,14 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
         lastClickedPtag = null;
         restoreImageCursor(currentHoveredImage);
         currentHoveredImage = null;
-        copyNotification.classList.remove('show');
+        if (notificationTimeout) {
+            clearTimeout(notificationTimeout);
+            notificationTimeout = null;
+        }
+        if (copyNotification) {
+            copyNotification.classList.remove('show');
+            copyNotification.remove();
+        }
     }
 });
 
@@ -316,6 +330,38 @@ function cloneContentForText(source) {
     return container;
 }
 
+// 只有当首尾符号是同一对（中途没有先闭合）时才视为包裹整段，
+// 避免「A」「B」这类多段引号被误剥离首尾字符。
+function findEnclosingSymbolPair(text, symbolPairs) {
+    const characters = Array.from(text);
+    if (characters.length < 2) return null;
+
+    const enclosingPair = symbolPairs.find(([open, close]) => {
+        if (characters[0] !== open || characters[characters.length - 1] !== close) {
+            return false;
+        }
+        if (open === close) {
+            // 开闭相同的符号无法判断嵌套，只有恰好首尾各出现一次才算包裹。
+            return !characters.slice(1, -1).includes(open);
+        }
+
+        let depth = 0;
+        for (let index = 0; index < characters.length; index += 1) {
+            const character = characters[index];
+            if (character === open) {
+                depth += 1;
+            } else if (character === close) {
+                depth -= 1;
+                if (depth < 0 || (depth === 0 && index < characters.length - 1)) {
+                    return false;
+                }
+            }
+        }
+        return depth === 0;
+    });
+    return enclosingPair || null;
+}
+
 // 清理文本
 function cleanText(source, symbolPairs) {
     const furiganaContainer = cloneContentForText(source);
@@ -360,16 +406,9 @@ function cleanText(source, symbolPairs) {
 
     let finalText = trimmedText.trim();
     textFurigana = textFurigana.trim();
-    let hasEnclosingSymbols = normalizedSymbolPairs.some(pair => {
-        return finalText.startsWith(pair[0]) && finalText.endsWith(pair[1]);
-    });
 
-    let symbolPair = null;
-    if (hasEnclosingSymbols) {
-        symbolPair = normalizedSymbolPairs.find(pair => {
-            return finalText.startsWith(pair[0]) && finalText.endsWith(pair[1]);
-        });
-
+    const symbolPair = findEnclosingSymbolPair(finalText, normalizedSymbolPairs);
+    if (symbolPair) {
         finalText = finalText.substring(symbolPair[0].length, finalText.length - symbolPair[1].length).trim();
         if (textFurigana.startsWith(symbolPair[0]) && textFurigana.endsWith(symbolPair[1])) {
             textFurigana = textFurigana
@@ -382,8 +421,9 @@ function cleanText(source, symbolPairs) {
 }
 
 function showBottomNotification(message = '已复制', duration = 800) {
-    copyNotification.textContent = message;
-    copyNotification.classList.add('show');
+    const notification = ensureCopyNotification();
+    notification.textContent = message;
+    notification.classList.add('show');
 
     // 清除之前的定时器
     if (notificationTimeout) {
@@ -392,7 +432,7 @@ function showBottomNotification(message = '已复制', duration = 800) {
 
     // 设置新的定时器
     notificationTimeout = setTimeout(() => {
-        copyNotification.classList.remove('show');
+        notification.classList.remove('show');
     }, duration);
 }
 
@@ -679,14 +719,20 @@ function storageLocalGet(key) {
             resolve(undefined);
             return;
         }
-        chrome.storage.local.get([key], result => {
-            if (chrome.runtime.lastError) {
-                console.warn('[AnonTranslator II] Failed to read translation cache:', chrome.runtime.lastError.message);
-                resolve(undefined);
-                return;
-            }
-            resolve(result?.[key]);
-        });
+        try {
+            chrome.storage.local.get([key], result => {
+                if (chrome.runtime.lastError) {
+                    console.warn('[AnonTranslator II] Failed to read translation cache:', chrome.runtime.lastError.message);
+                    resolve(undefined);
+                    return;
+                }
+                resolve(result?.[key]);
+            });
+        } catch (error) {
+            // 孤儿脚本访问 chrome.storage 会同步抛错，降级为无缓存。
+            console.warn('[AnonTranslator II] Failed to read translation cache:', error);
+            resolve(undefined);
+        }
     });
 }
 
@@ -696,12 +742,17 @@ function storageLocalSet(values) {
             resolve();
             return;
         }
-        chrome.storage.local.set(values, () => {
-            if (chrome.runtime.lastError) {
-                console.warn('[AnonTranslator II] Failed to write translation cache:', chrome.runtime.lastError.message);
-            }
+        try {
+            chrome.storage.local.set(values, () => {
+                if (chrome.runtime.lastError) {
+                    console.warn('[AnonTranslator II] Failed to write translation cache:', chrome.runtime.lastError.message);
+                }
+                resolve();
+            });
+        } catch (error) {
+            console.warn('[AnonTranslator II] Failed to write translation cache:', error);
             resolve();
-        });
+        }
     });
 }
 
@@ -711,12 +762,17 @@ function storageLocalRemove(keys) {
             resolve();
             return;
         }
-        chrome.storage.local.remove(keys, () => {
-            if (chrome.runtime.lastError) {
-                console.warn('[AnonTranslator II] Failed to prune translation cache:', chrome.runtime.lastError.message);
-            }
+        try {
+            chrome.storage.local.remove(keys, () => {
+                if (chrome.runtime.lastError) {
+                    console.warn('[AnonTranslator II] Failed to prune translation cache:', chrome.runtime.lastError.message);
+                }
+                resolve();
+            });
+        } catch (error) {
+            console.warn('[AnonTranslator II] Failed to prune translation cache:', error);
             resolve();
-        });
+        }
     });
 }
 
@@ -746,38 +802,42 @@ function pruneTranslationCache() {
     if (typeof chrome === 'undefined' || !chrome.storage?.local?.get) {
         return;
     }
-    chrome.storage.local.get(null, result => {
-        if (chrome.runtime.lastError || !result) {
-            if (chrome.runtime.lastError) {
-                console.warn('[AnonTranslator II] Failed to inspect translation cache:', chrome.runtime.lastError.message);
+    try {
+        chrome.storage.local.get(null, result => {
+            if (chrome.runtime.lastError || !result) {
+                if (chrome.runtime.lastError) {
+                    console.warn('[AnonTranslator II] Failed to inspect translation cache:', chrome.runtime.lastError.message);
+                }
+                return;
             }
-            return;
-        }
 
-        const entries = Object.entries(result)
-            .filter(([key]) => isManagedTranslationCacheKey(key))
-            .map(([key, value]) => ({
-                key,
-                createdAt: Number(value?.createdAt) || 0,
-                legacy: legacyTranslationCachePrefixes.some(prefix => key.startsWith(prefix))
-            }))
-            .sort((a, b) => b.createdAt - a.createdAt);
+            const entries = Object.entries(result)
+                .filter(([key]) => isManagedTranslationCacheKey(key))
+                .map(([key, value]) => ({
+                    key,
+                    createdAt: Number(value?.createdAt) || 0,
+                    legacy: legacyTranslationCachePrefixes.some(prefix => key.startsWith(prefix))
+                }))
+                .sort((a, b) => b.createdAt - a.createdAt);
 
-        const ttlMs = getTranslationCacheTtlMs();
-        const expiredKeys = entries
-            .filter(entry => entry.legacy || (
-                Number.isFinite(ttlMs) && now - entry.createdAt > ttlMs
-            ))
-            .map(entry => entry.key);
-        const overflowKeys = entries
-            .filter(entry => !entry.legacy)
-            .slice(translationCacheMaxEntries)
-            .map(entry => entry.key);
-        const keysToRemove = Array.from(new Set([...expiredKeys, ...overflowKeys]));
-        if (keysToRemove.length > 0) {
-            storageLocalRemove(keysToRemove);
-        }
-    });
+            const ttlMs = getTranslationCacheTtlMs();
+            const expiredKeys = entries
+                .filter(entry => entry.legacy || (
+                    Number.isFinite(ttlMs) && now - entry.createdAt > ttlMs
+                ))
+                .map(entry => entry.key);
+            const overflowKeys = entries
+                .filter(entry => !entry.legacy)
+                .slice(translationCacheMaxEntries)
+                .map(entry => entry.key);
+            const keysToRemove = Array.from(new Set([...expiredKeys, ...overflowKeys]));
+            if (keysToRemove.length > 0) {
+                storageLocalRemove(keysToRemove);
+            }
+        });
+    } catch (error) {
+        console.warn('[AnonTranslator II] Failed to inspect translation cache:', error);
+    }
 }
 
 async function getCachedTranslation(text, translator, fromLang, toLang, model) {
@@ -873,32 +933,37 @@ function renderTranslationResult(translationDiv, textObj, response, color, trans
 // 发送消息到背景脚本并获取翻译结果
 function requestTranslation(tag, translationDiv, textObj, fromLang, toLang, translator, color, model) {
     const text = textObj.text;
-    chrome.runtime.sendMessage({ 
-        action: "translate", 
-        text: text, 
-        from: fromLang, 
-        to: toLang, 
-        translator: translator,
-        model: model
-    }, function(response) {
-        if (!translationDiv.isConnected || !tag.contains(translationDiv)) {
-            return;
-        }
-        if (chrome.runtime.lastError) {
-            renderTranslationError(translationDiv, color, chrome.runtime.lastError.message);
-            return;
-        }
-        if (response?.ok && response.translatedText) {
-            const normalizedResponse = {
-                ...response,
-                provider: response.provider || translator
-            };
-            renderTranslationResult(translationDiv, textObj, normalizedResponse, color, translator);
-            cacheTranslation(text, translator, fromLang, toLang, model, normalizedResponse);
-        } else {
-            renderTranslationError(translationDiv, color, response?.error || '翻译没有返回结果');
-        }
-    });
+    try {
+        chrome.runtime.sendMessage({
+            action: "translate",
+            text: text,
+            from: fromLang,
+            to: toLang,
+            translator: translator,
+            model: model
+        }, function(response) {
+            if (!translationDiv.isConnected || !tag.contains(translationDiv)) {
+                return;
+            }
+            if (chrome.runtime.lastError) {
+                renderTranslationError(translationDiv, color, chrome.runtime.lastError.message);
+                return;
+            }
+            if (response?.ok && response.translatedText) {
+                const normalizedResponse = {
+                    ...response,
+                    provider: response.provider || translator
+                };
+                renderTranslationResult(translationDiv, textObj, normalizedResponse, color, translator);
+                cacheTranslation(text, translator, fromLang, toLang, model, normalizedResponse);
+            } else {
+                renderTranslationError(translationDiv, color, response?.error || '翻译没有返回结果');
+            }
+        });
+    } catch (_) {
+        // 扩展更新或重载后，旧页面的孤儿脚本无法再连接后台，明确提示刷新而不是留空框。
+        renderTranslationError(translationDiv, color, '扩展已更新或重新加载，请刷新页面后重试');
+    }
 }
 
 function renderTranslationError(translationDiv, color, error) {

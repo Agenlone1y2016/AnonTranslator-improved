@@ -2,7 +2,11 @@
 
 const version = chrome.runtime.getManifest().version;
 const LOCAL_ONLY_FIELDS = new Set(['deepseekApiKey']);
+// select 控件的 value 是字符串，这些设置在存储里统一保存为数字。
+const NUMERIC_FIELDS = new Set(['translationCacheDays']);
+const TRANSLATION_CACHE_KEY_PREFIX = 'anontranslator.translationCache.';
 let saveStateTimeout;
+let cacheClearTimeout;
 document.getElementById('extensionVersion').textContent = `Ver ${version} `;
 
 function updateBackgroundImage(isPluginOn) {
@@ -23,6 +27,8 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('pluginSwitch').addEventListener('change', event => {
     updateBackgroundImage(event.target.checked);
   });
+
+  document.getElementById('clearTranslationCache').addEventListener('click', clearTranslationCache);
 });
 
 function applySettingsToForm(settings) {
@@ -82,6 +88,46 @@ function getElementValue(element) {
   return element.value;
 }
 
+// 清除本机保存的全部翻译缓存（兼容 v1/v2 前缀），不触碰 API Key 等其他 local 数据。
+function clearTranslationCache() {
+  const button = document.getElementById('clearTranslationCache');
+  const defaultLabel = button.dataset.defaultLabel || button.textContent;
+  button.dataset.defaultLabel = defaultLabel;
+
+  const finish = label => {
+    button.disabled = false;
+    button.textContent = label;
+    clearTimeout(cacheClearTimeout);
+    cacheClearTimeout = setTimeout(() => {
+      button.textContent = defaultLabel;
+    }, 1400);
+  };
+
+  button.disabled = true;
+  chrome.storage.local.get(null, items => {
+    if (chrome.runtime.lastError) {
+      console.error('[AnonTranslator II] Failed to read translation cache:', chrome.runtime.lastError.message);
+      finish('清除失败');
+      return;
+    }
+
+    const cacheKeys = Object.keys(items || {}).filter(key => key.startsWith(TRANSLATION_CACHE_KEY_PREFIX));
+    if (cacheKeys.length === 0) {
+      finish('没有可清除的缓存');
+      return;
+    }
+
+    chrome.storage.local.remove(cacheKeys, () => {
+      if (chrome.runtime.lastError) {
+        console.error('[AnonTranslator II] Failed to clear translation cache:', chrome.runtime.lastError.message);
+        finish('清除失败');
+        return;
+      }
+      finish(`已清除 ${cacheKeys.length} 条`);
+    });
+  });
+}
+
 function showSaveState(text, className) {
   const saveButton = document.querySelector('.save');
   clearTimeout(saveStateTimeout);
@@ -101,13 +147,17 @@ function saveSettings() {
   const saveButton = document.querySelector('.save');
 
   Array.from(elements).forEach(element => {
-    if (!element.id || element.classList.contains('tab')) return;
+    if (!element.id || element.classList.contains('tab') || element.tagName === 'BUTTON') return;
 
     const target = LOCAL_ONLY_FIELDS.has(element.id) ? localSettings : syncSettings;
-    const value = getElementValue(element);
-    target[element.id] = LOCAL_ONLY_FIELDS.has(element.id) && typeof value === 'string'
-      ? value.trim()
-      : value;
+    let value = getElementValue(element);
+    if (LOCAL_ONLY_FIELDS.has(element.id) && typeof value === 'string') {
+      value = value.trim();
+    }
+    if (NUMERIC_FIELDS.has(element.id)) {
+      value = Number(value);
+    }
+    target[element.id] = value;
   });
 
   saveButton.disabled = true;

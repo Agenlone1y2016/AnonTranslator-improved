@@ -5,7 +5,7 @@
   "description": "AnonTranslator II Chrome extension for Japanese reading and translation.",
   "type": "commonjs",
   "scripts": {
-    "test": "node tests/project.test.cjs && node tests/background.test.cjs"
+    "test": "node tests/project.test.cjs && node tests/content.test.cjs && node tests/background.test.cjs"
   },
   "engines": {
     "node": ">=20"
@@ -14,5 +14,8 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/Agenlone1y2016/AnonTranslator-II.git"
+  },
+  "devDependencies": {
+    "jsdom": "^29.1.1"
   }
 }

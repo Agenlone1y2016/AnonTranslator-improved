@@ -73,6 +73,9 @@
               <option value="0">永久保留</option>
             </select>
           </div>
+          <div class="settings">
+            <button type="button" id="clearTranslationCache" class="clear-cache">Clear Cache: 清除已存译文</button>
+          </div>
 
           <input type="checkbox" id="tabGoogle" name="translatorTab" class="tab" checked />
           <div class="tab-header tab-header-color">
@@ -209,6 +212,7 @@
             <li>启用 DeepSeek 时，一次请求同时显示译文和词语级假名原文行。</li>
             <li>点击翻译结果旁的小三角：展开或收起该段的假名标注和译文。</li>
             <li>启用保存翻译结果后，刷新页面再点击相同段落会优先读取本机缓存。</li>
+            <li>Translator 里的 Clear Cache 按钮可随时一键清除本机已保存的译文。</li>
             <li>右键点击高亮句子：复制该句。</li>
           </ul>
           <p>DeepSeek API Key 可在 <a href="https://platform.deepseek.com/" target="_blank" rel="noopener noreferrer">DeepSeek Platform↗</a> 创建。</p>
