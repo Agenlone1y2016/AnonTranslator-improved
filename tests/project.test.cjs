@@ -8,6 +8,7 @@ const popup = fs.readFileSync('popup.html', 'utf8');
 const background = fs.readFileSync('src/background.js', 'utf8');
 const content = fs.readFileSync('src/content.js', 'utf8');
 const styles = fs.readFileSync('css/styles.css', 'utf8');
+const browserFixture = fs.readFileSync('tests/browser-fixture.html', 'utf8');
 
 const referencedFiles = [
   manifest.action?.default_popup,
@@ -57,6 +58,8 @@ assert.ok(configuredModels.includes(defaults.deepseekModel));
 
 assert.doesNotMatch(content, /\.innerHTML\s*=/, 'content script should not reparse page HTML');
 assert.match(content, /translationCachePrefix/, 'content script should define translation cache keys');
+assert.match(content, /translationCacheVersion = 2/, 'translation cache should use exact-text v2 entries');
+assert.match(content, /legacyTranslationCachePrefixes/, 'translation cache should prune unsafe v1 entries');
 assert.match(content, /chrome\.storage\.local\.set/, 'content script should persist translation cache locally');
 assert.match(content, /translationCacheDays/, 'content script should use the configured cache duration');
 assert.match(content, /return Infinity/, 'translation cache should support permanent retention');
@@ -67,6 +70,75 @@ assert.match(styles, /\.anontranslator-translation-toggle[\s\S]*position:\s*abso
 assert.match(styles, /clip-path:\s*polygon/, 'translation toggle should draw a graphic triangle instead of using text');
 assert.doesNotMatch(background, /LEGACY_SETTING_KEYS/, 'background should not keep removed feature migration code');
 assert.doesNotMatch(background, /useWindowsTTS|useVITS|youdao|deepl|caiyun/, 'background should not reference removed providers');
+
+const readableBlockSource = content.slice(
+  content.indexOf('function isReadableBlock'),
+  content.indexOf('function findReadableBlockFromNode')
+);
+assert.ok(
+  readableBlockSource.indexOf('if (!isStrictReadable && !isGenericReadable)') <
+    readableBlockSource.indexOf('const textLength = getElementTextLength(element'),
+  'readable-block detection should reject unrelated nodes before copying their text'
+);
+assert.match(
+  readableBlockSource,
+  /if \(isGenericReadable && !isStrictReadable\)/,
+  'explicit role paragraphs should retain strict readable-block behavior'
+);
+assert.match(
+  content,
+  /document\.createTreeWalker\(element, NodeFilter\.SHOW_TEXT\)/,
+  'readable-block text checks should stop without copying a full large subtree'
+);
+
+const readablePathSource = content.slice(
+  content.indexOf('function findReadableBlockFromNode'),
+  content.indexOf('function findReadableBlockFromEvent')
+);
+assert.match(
+  readablePathSource,
+  /if \(eventPath\.length > 0\)[\s\S]*return null;/,
+  'composed paths should not be scanned twice'
+);
+
+const togglePositionSource = content.slice(
+  content.indexOf('function positionTranslationToggle'),
+  content.indexOf('function getPageCacheScope')
+);
+assert.match(togglePositionSource, /removeTranslationDiv\(translationDiv\)/, 'detached translations should release their toggles');
+assert.match(togglePositionSource, /translationToggleFrame !== null/, 'toggle positioning should coalesce animation frames');
+assert.match(content, /new MutationObserver/, 'translation toggles should react to host-page DOM removal');
+
+const cacheSignatureSource = content.slice(
+  content.indexOf('function getTranslationTextSignature'),
+  content.indexOf('function isManagedTranslationCacheKey')
+);
+assert.match(cacheSignatureSource, /String\(text \?\? ''\)/, 'cache signatures should use the exact source text');
+assert.doesNotMatch(cacheSignatureSource, /replace\(/, 'cache signatures must not collapse whitespace used by furigana offsets');
+
+const handleClickSource = content.slice(
+  content.indexOf('function handleClick'),
+  content.indexOf('// 为指定标签添加激活框')
+);
+assert.match(handleClickSource, /clickedElement\?\.closest\('img, svg image'\)/, 'clicking an image itself should skip paragraph translation');
+assert.doesNotMatch(handleClickSource, /targetElement\.querySelector\('img, svg image'\)/, 'inline images should not disable paragraph translation');
+
+const hoverSource = content.slice(
+  content.indexOf('function highlightAndCopyPtag'),
+  content.indexOf('// 为文档添加鼠标监听器')
+);
+assert.doesNotMatch(hoverSource, /currentHoveredBlock = toElement/, 'moving directly between paragraphs should not suppress the next hover');
+assert.match(hoverSource, /currentHoveredBlock = null/, 'mouseout should allow the next paragraph to receive hover state');
+
+const contextMenuSource = content.slice(
+  content.indexOf("doc.addEventListener('contextmenu'"),
+  content.indexOf("doc.addEventListener('mouseover'", content.indexOf("doc.addEventListener('contextmenu'"))
+);
+assert.match(contextMenuSource, /!extensionSettings\.copy/, 'disabled copy mode should preserve the native context menu');
+
+assert.match(browserFixture, /id="cache-double-space"/, 'browser fixture should cover exact whitespace cache keys');
+assert.match(browserFixture, /id="cache-single-space"/, 'browser fixture should cover whitespace variants');
+assert.match(browserFixture, /id="image-paragraph-text"/, 'browser fixture should cover text beside inline images');
 
 const applyBlueBorderSource = content.slice(
   content.indexOf('function applyBlueBorder'),

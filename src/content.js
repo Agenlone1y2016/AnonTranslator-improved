@@ -26,6 +26,7 @@ const strictReadableSelector = [
     '[role="paragraph"]'
 ].join(',');
 const readableSelector = `${strictReadableSelector},div,article,section,main`;
+const whitespaceCharacterPattern = /\s/u;
 const extensionClasses = {
     translation: 'anontranslator-translation',
     translationCollapsed: 'anontranslator-translation-collapsed',
@@ -53,6 +54,8 @@ const originalBlockContents = new WeakMap();
 const splitBlocks = new Set();
 const translationToggles = new WeakMap();
 const activeTranslationDivs = new Set();
+let translationToggleFrame = null;
+let translationDomObserver = null;
 
 // 临时覆盖图片鼠标样式时，只恢复插件改动过的局部属性。
 const originalImageCursors = new WeakMap();
@@ -69,7 +72,9 @@ if (!copyNotification.isConnected) {
     document.documentElement.appendChild(copyNotification);
 }
 
-const translationCachePrefix = 'anontranslator.translationCache.v1:';
+const translationCachePrefix = 'anontranslator.translationCache.v2:';
+const legacyTranslationCachePrefixes = ['anontranslator.translationCache.v1:'];
+const translationCacheVersion = 2;
 const translationCacheMaxEntries = 500;
 const translationCachePruneIntervalMs = 5 * 60 * 1000;
 let lastTranslationCachePruneAt = 0;
@@ -116,7 +121,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
         if (currentHoveredBlock && currentHoveredBlock !== lastClickedPtag) {
             restoreOutline(currentHoveredBlock);
         }
-        document.querySelectorAll(`.${extensionClasses.translation}`).forEach(removeTranslationDiv);
+        Array.from(activeTranslationDivs).forEach(removeTranslationDiv);
         Array.from(splitBlocks).forEach(restoreSentenceSplitting);
         if (lastClickedPtag) {
             restoreOutline(lastClickedPtag);
@@ -139,12 +144,46 @@ function parseStringToArray(str) {
         : [];
 }
 
-function getElementText(element) {
-    return (element?.textContent || '').replace(/\s+/g, ' ').trim();
+function getElementTextLength(element, maxLength) {
+    if (!(element instanceof Element)) return 0;
+
+    const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+    let length = 0;
+    let hasText = false;
+    let pendingWhitespace = false;
+    let textNode;
+
+    while ((textNode = walker.nextNode())) {
+        const value = textNode.nodeValue || '';
+        for (const character of value) {
+            if (whitespaceCharacterPattern.test(character)) {
+                if (hasText) pendingWhitespace = true;
+                continue;
+            }
+
+            if (pendingWhitespace) {
+                length += 1;
+                pendingWhitespace = false;
+            }
+            length += character.length;
+            hasText = true;
+            if (length > maxLength) {
+                return length;
+            }
+        }
+    }
+    return length;
 }
 
 function isReadableBlock(element) {
     if (!(element instanceof Element) || !element.isConnected) {
+        return false;
+    }
+
+    const isStrictReadable = strictReadableTags.has(element.nodeName) ||
+        element.getAttribute('role') === 'paragraph';
+    const isGenericReadable = genericReadableTags.has(element.nodeName);
+    if (!isStrictReadable && !isGenericReadable) {
         return false;
     }
 
@@ -157,38 +196,39 @@ function isReadableBlock(element) {
         return false;
     }
 
-    const text = getElementText(element);
-    if (!text) {
-        return false;
-    }
-
-    if (strictReadableTags.has(element.nodeName) || element.getAttribute('role') === 'paragraph') {
-        return true;
-    }
-
-    if (!genericReadableTags.has(element.nodeName) || text.length > 5000) {
-        return false;
-    }
-
-    // 容器里已经有更精确的段落标签时，不把整个章节/页面误判成一个段落。
-    if (element.querySelector(strictReadableSelector)) {
-        return false;
-    }
-
-    // 对通用容器选择最靠近文字的叶子节点。
-    return !Array.from(element.children).some(child => {
-        if (child.classList.contains(extensionClasses.translation)) {
+    if (isGenericReadable && !isStrictReadable) {
+        // 容器里已经有更精确的段落标签时，不把整个章节/页面误判成一个段落。
+        if (element.querySelector(strictReadableSelector)) {
             return false;
         }
-        return genericReadableTags.has(child.nodeName) && getElementText(child);
-    });
+
+        // 对通用容器选择最靠近文字的叶子节点，并避免先复制整个大型容器的文本。
+        const hasReadableGenericChild = Array.from(element.children).some(child => {
+            if (child.classList.contains(extensionClasses.translation)) {
+                return false;
+            }
+            return genericReadableTags.has(child.nodeName) && getElementTextLength(child, 0) > 0;
+        });
+        if (hasReadableGenericChild) {
+            return false;
+        }
+    }
+
+    const textLength = getElementTextLength(element, isStrictReadable ? 0 : 5000);
+    if (textLength === 0) {
+        return false;
+    }
+    return isStrictReadable || textLength <= 5000;
 }
 
 function findReadableBlockFromNode(node, eventPath = []) {
-    for (const pathNode of eventPath) {
-        if (isReadableBlock(pathNode)) {
-            return pathNode;
+    if (eventPath.length > 0) {
+        for (const pathNode of eventPath) {
+            if (isReadableBlock(pathNode)) {
+                return pathNode;
+            }
         }
+        return null;
     }
 
     let element = node instanceof Element ? node : node?.parentElement;
@@ -459,6 +499,7 @@ function createTranslationDiv() {
     translationToggles.set(translationDiv, toggle);
     activeTranslationDivs.add(translationDiv);
     document.documentElement.appendChild(toggle);
+    ensureTranslationDomObserver();
     getTranslationBody(translationDiv);
     updateTranslationToggle(translationDiv, false);
     scheduleTranslationTogglePositions();
@@ -473,6 +514,32 @@ function removeTranslationDiv(translationDiv) {
     translationToggles.delete(translationDiv);
     activeTranslationDivs.delete(translationDiv);
     translationDiv.remove();
+    stopTranslationTrackingIfIdle();
+}
+
+function ensureTranslationDomObserver() {
+    if (translationDomObserver || !document.documentElement) return;
+
+    translationDomObserver = new MutationObserver(() => {
+        scheduleTranslationTogglePositions();
+    });
+    translationDomObserver.observe(document.documentElement, {
+        childList: true,
+        subtree: true
+    });
+}
+
+function stopTranslationTrackingIfIdle() {
+    if (activeTranslationDivs.size > 0) return;
+
+    if (translationDomObserver) {
+        translationDomObserver.disconnect();
+        translationDomObserver = null;
+    }
+    if (translationToggleFrame !== null) {
+        cancelAnimationFrame(translationToggleFrame);
+        translationToggleFrame = null;
+    }
 }
 
 function getOriginalContentLineRects(tag, translationDiv) {
@@ -537,12 +604,9 @@ function positionTranslationToggle(translationDiv) {
 }
 
 function positionAllTranslationToggles() {
-    activeTranslationDivs.forEach(translationDiv => {
+    Array.from(activeTranslationDivs).forEach(translationDiv => {
         if (!translationDiv.isConnected) {
-            const toggle = translationToggles.get(translationDiv);
-            if (toggle) {
-                toggle.style.visibility = 'hidden';
-            }
+            removeTranslationDiv(translationDiv);
             return;
         }
         positionTranslationToggle(translationDiv);
@@ -550,11 +614,12 @@ function positionAllTranslationToggles() {
 }
 
 function scheduleTranslationTogglePositions() {
-    requestAnimationFrame(positionAllTranslationToggles);
-}
+    if (activeTranslationDivs.size === 0 || translationToggleFrame !== null) return;
 
-function normalizeTranslationCacheText(text) {
-    return String(text || '').replace(/\s+/g, ' ').trim();
+    translationToggleFrame = requestAnimationFrame(() => {
+        translationToggleFrame = null;
+        positionAllTranslationToggles();
+    });
 }
 
 function getPageCacheScope() {
@@ -583,11 +648,16 @@ function hashString(value) {
 }
 
 function getTranslationTextSignature(text) {
-    const normalizedText = normalizeTranslationCacheText(text);
+    const sourceText = String(text ?? '');
     return {
-        hash: hashString(normalizedText),
-        length: Array.from(normalizedText).length
+        hash: hashString(sourceText),
+        length: Array.from(sourceText).length
     };
+}
+
+function isManagedTranslationCacheKey(key) {
+    return key.startsWith(translationCachePrefix) ||
+        legacyTranslationCachePrefixes.some(prefix => key.startsWith(prefix));
 }
 
 function getTranslationCacheKey(text, translator, fromLang, toLang, model) {
@@ -685,20 +755,22 @@ function pruneTranslationCache() {
         }
 
         const entries = Object.entries(result)
-            .filter(([key]) => key.startsWith(translationCachePrefix))
+            .filter(([key]) => isManagedTranslationCacheKey(key))
             .map(([key, value]) => ({
                 key,
-                createdAt: Number(value?.createdAt) || 0
+                createdAt: Number(value?.createdAt) || 0,
+                legacy: legacyTranslationCachePrefixes.some(prefix => key.startsWith(prefix))
             }))
             .sort((a, b) => b.createdAt - a.createdAt);
 
         const ttlMs = getTranslationCacheTtlMs();
-        const expiredKeys = Number.isFinite(ttlMs)
-            ? entries
-                .filter(entry => now - entry.createdAt > ttlMs)
-                .map(entry => entry.key)
-            : [];
+        const expiredKeys = entries
+            .filter(entry => entry.legacy || (
+                Number.isFinite(ttlMs) && now - entry.createdAt > ttlMs
+            ))
+            .map(entry => entry.key);
         const overflowKeys = entries
+            .filter(entry => !entry.legacy)
             .slice(translationCacheMaxEntries)
             .map(entry => entry.key);
         const keysToRemove = Array.from(new Set([...expiredKeys, ...overflowKeys]));
@@ -716,7 +788,7 @@ async function getCachedTranslation(text, translator, fromLang, toLang, model) {
     const textSignature = getTranslationTextSignature(text);
     if (
         !cached ||
-        cached.version !== 1 ||
+        cached.version !== translationCacheVersion ||
         cached.textHash !== textSignature.hash ||
         cached.textLength !== textSignature.length ||
         cached.provider !== translator ||
@@ -746,7 +818,7 @@ function cacheTranslation(text, translator, fromLang, toLang, model, response) {
     const key = getTranslationCacheKey(text, translator, fromLang, toLang, model);
     const textSignature = getTranslationTextSignature(text);
     const entry = {
-        version: 1,
+        version: translationCacheVersion,
         page: getPageCacheScope(),
         textHash: textSignature.hash,
         textLength: textSignature.length,
@@ -1070,16 +1142,16 @@ function getSafeImageUrl(image) {
 function handleClick(event) {
     if (!pluginEnabled || event.button !== 0) return;
 
+    const clickedElement = event.target instanceof Element ? event.target : null;
+    if (clickedElement?.closest('img, svg image')) return;
+
     const targetElement = findReadableBlockFromEvent(event);
     if (!targetElement) return;
 
-    // 检查目标元素是否包含图片
-    if (!targetElement.querySelector('img, svg image')) {
-        applyBlueBorder(targetElement, () => {
-            copyBlockText(targetElement);
-            translate(targetElement);
-        });
-    }
+    applyBlueBorder(targetElement, () => {
+        copyBlockText(targetElement);
+        translate(targetElement);
+    });
 }
 
 // 为指定标签添加激活框
@@ -1160,7 +1232,8 @@ function highlightAndCopyPtag(doc) {
             if (fromElement !== lastClickedPtag) {
                 restoreOutline(fromElement);
             }
-            currentHoveredBlock = toElement;
+            // 让随后进入新段落的 mouseover 正常应用预选框。
+            currentHoveredBlock = null;
         }
     }, true);
 
@@ -1178,7 +1251,7 @@ function addMouseListener(doc) {
 
     // 仅在扩展生成的句子上接管右键，用于复制当前句子。
     doc.addEventListener('contextmenu', function(event) {
-        if (!pluginEnabled) return;
+        if (!pluginEnabled || !extensionSettings.copy) return;
 
         const targetElement = event.target instanceof Element ? event.target : null;
         const sentence = targetElement?.closest(`.${extensionClasses.sentence}`);

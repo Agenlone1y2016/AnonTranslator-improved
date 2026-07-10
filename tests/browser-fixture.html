@@ -30,9 +30,42 @@
 
   <p id="furigana-p">明日は学校へ行った。五月は本を読んだ。</p>
 
+  <p id="cache-double-space">明日  学校</p>
+  <p id="cache-single-space">明日 学校</p>
+
+  <p id="image-paragraph">
+    <span id="image-paragraph-text">行内图片旁边的文字也应该可以翻译。</span>
+    <img
+      id="inline-image"
+      alt="测试图片"
+      width="1"
+      height="1"
+      src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw=="
+    >
+  </p>
+
   <button id="action-button">页面自己的按钮</button>
 
   <script>
+    const annotationsByText = new Map([
+      ["明日は学校へ行った。五月は本を読んだ。", [
+        { start: 0, end: 2, reading: "あした" },
+        { start: 3, end: 5, reading: "がっこう" },
+        { start: 6, end: 9, reading: "いった" },
+        { start: 10, end: 12, reading: "さつき" },
+        { start: 13, end: 14, reading: "ほん" },
+        { start: 15, end: 18, reading: "よんだ" }
+      ]],
+      ["明日  学校", [
+        { start: 0, end: 2, reading: "あした" },
+        { start: 4, end: 6, reading: "がっこう" }
+      ]],
+      ["明日 学校", [
+        { start: 0, end: 2, reading: "あした" },
+        { start: 3, end: 5, reading: "がっこう" }
+      ]]
+    ]);
+
     const settings = {
       pluginSwitch: true,
       copy: false,
@@ -121,20 +154,13 @@
               ok: true,
               translatedText: "明天去学校。五月读了书。",
               provider: "deepseek",
-              furiganaAnnotations: message.text.includes("明日") ? [
-                  { start: 0, end: 2, reading: "あした" },
-                  { start: 3, end: 5, reading: "がっこう" },
-                  { start: 6, end: 9, reading: "いった" },
-                  { start: 10, end: 12, reading: "さつき" },
-                  { start: 13, end: 14, reading: "ほん" },
-                  { start: 15, end: 18, reading: "よんだ" }
-              ] : []
+              furiganaAnnotations: annotationsByText.get(message.text) || []
             });
           }
         }
       }
     };
   </script>
-  <script src="../src/content.js?v=20260624-2"></script>
+  <script src="../src/content.js?v=20260710-1"></script>
 </body>
 </html>
