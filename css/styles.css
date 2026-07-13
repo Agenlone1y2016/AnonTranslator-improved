@@ -105,3 +105,110 @@ ruby.anon-furigana > rt {
     line-height: 1.9;
     opacity: 0.92;
 }
+
+.anontranslator-general-action {
+    all: initial;
+    box-sizing: border-box;
+    position: fixed;
+    z-index: 2147483647;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    color: white;
+    background: #4d8dff;
+    border: 1px solid rgba(255, 255, 255, 0.72);
+    border-radius: 9px;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.28);
+    cursor: pointer;
+    font: 600 15px/1 system-ui, sans-serif;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.anontranslator-general-action:hover {
+    background: #3978e6;
+    transform: translateY(-1px);
+}
+
+.anontranslator-general-action:focus-visible,
+.anontranslator-general-close:focus-visible {
+    outline: 2px solid #ffffff;
+    outline-offset: 2px;
+}
+
+.anontranslator-general-card {
+    all: initial;
+    box-sizing: border-box;
+    position: fixed;
+    z-index: 2147483647;
+    display: block;
+    width: min(380px, calc(100vw - 20px));
+    max-height: min(55vh, 460px);
+    overflow: auto;
+    color: #1e252d;
+    background: #ffffff;
+    border: 1px solid rgba(42, 57, 74, 0.2);
+    border-radius: 12px;
+    box-shadow: 0 10px 32px rgba(0, 0, 0, 0.28);
+    font: 14px/1.6 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    text-align: left;
+    overflow-wrap: anywhere;
+}
+
+.anontranslator-general-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 12px;
+    color: #263442;
+    background: #f4f7fb;
+    border-bottom: 1px solid rgba(42, 57, 74, 0.12);
+}
+
+.anontranslator-general-close {
+    all: initial;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    color: #5a6672;
+    border-radius: 7px;
+    cursor: pointer;
+    font: 22px/1 system-ui, sans-serif;
+}
+
+.anontranslator-general-close:hover {
+    color: #17212b;
+    background: rgba(41, 65, 91, 0.1);
+}
+
+.anontranslator-general-card-body {
+    display: block;
+    padding: 4px 12px 10px;
+}
+
+.anontranslator-general-result {
+    display: block;
+    padding: 9px 0;
+    white-space: pre-wrap;
+}
+
+.anontranslator-general-result + .anontranslator-general-result {
+    border-top: 1px solid rgba(42, 57, 74, 0.12);
+}
+
+.anontranslator-general-provider {
+    display: block;
+    margin-bottom: 3px;
+    font-size: 12px;
+    opacity: 0.72;
+}
+
+.anontranslator-general-result-text {
+    display: block;
+    color: inherit;
+}

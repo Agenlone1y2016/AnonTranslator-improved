@@ -1,5 +1,6 @@
 {
   "pluginSwitch": false,
+  "translationMode": "novel",
   "copy": true,
   "ignoreFurigana": true,
   "showCopyContent": false,

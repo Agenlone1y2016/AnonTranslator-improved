@@ -8,6 +8,7 @@ const defaults = JSON.parse(fs.readFileSync('config/defaultSettings.json', 'utf8
 const popup = fs.readFileSync('popup.html', 'utf8');
 const background = fs.readFileSync('src/background.js', 'utf8');
 const content = fs.readFileSync('src/content.js', 'utf8');
+const popupScript = fs.readFileSync('src/popup.js', 'utf8');
 
 // manifest 引用的文件必须都存在。
 const referencedFiles = [
@@ -67,6 +68,15 @@ for (const model of configuredModels) {
 assert.ok(
   configuredModels.includes(defaults.deepseekModel),
   'default DeepSeek model must be selectable in the popup'
+);
+
+assert.equal(defaults.translationMode, 'novel', 'existing users must default to novel mode');
+assert.match(popup, /<option value="novel">日语轻小说<\/option>/);
+assert.match(popup, /<option value="general">常规翻译<\/option>/);
+assert.match(
+  popupScript,
+  /chrome\.storage\.sync\.set\(\{ translationMode: normalizedMode \}/,
+  'translation mode should persist immediately without submitting the form'
 );
 
 // 安全底线：内容脚本不得用 innerHTML 重新解析网页内容。

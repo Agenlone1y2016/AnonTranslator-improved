@@ -37,7 +37,11 @@ const extensionClasses = {
     splitSentences: 'anontranslator-split-sentences',
     hovered: 'anontranslator-hovered',
     selected: 'anontranslator-selected',
-    furiganaSource: 'anontranslator-furigana-source-line'
+    furiganaSource: 'anontranslator-furigana-source-line',
+    generalAction: 'anontranslator-general-action',
+    generalCard: 'anontranslator-general-card',
+    generalCardBody: 'anontranslator-general-card-body',
+    generalResult: 'anontranslator-general-result'
 };
 
 // 当前鼠标预选的文本块
@@ -56,6 +60,15 @@ const translationToggles = new WeakMap();
 const activeTranslationDivs = new Set();
 let translationToggleFrame = null;
 let translationDomObserver = null;
+
+// 常规翻译模式只维护一个选区按钮和一个结果浮层。
+let generalSelectionButton = null;
+let generalTranslationCard = null;
+let generalSelectionSnapshot = null;
+let generalDismissedSelectionSnapshot = null;
+let generalRequestGeneration = 0;
+let generalSelectionFrame = null;
+let generalDomObserver = null;
 
 // 临时覆盖图片鼠标样式时，只恢复插件改动过的局部属性。
 const originalImageCursors = new WeakMap();
@@ -91,10 +104,14 @@ let lastTranslationCachePruneAt = 0;
 
 function initializeSettings(data) {
     Object.assign(extensionSettings, data);
+    extensionSettings.translationMode = normalizeTranslationMode(extensionSettings.translationMode);
     pluginEnabled = Boolean(extensionSettings.pluginSwitch);
     if (pluginEnabled) {
         // 启动鼠标监听器
         addMouseListener(document);
+        if (!isNovelMode()) {
+            scheduleGeneralSelectionUpdate();
+        }
     }
 }
 
@@ -115,6 +132,16 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
         extensionSettings[key] = change.newValue;
     }
 
+    if (changes.translationMode) {
+        extensionSettings.translationMode = normalizeTranslationMode(extensionSettings.translationMode);
+        if (extensionSettings.translationMode === 'general') {
+            clearNovelInteractionState();
+            scheduleGeneralSelectionUpdate();
+        } else {
+            clearGeneralTranslationUi();
+        }
+    }
+
     if (changes.extraImage && !extensionSettings.extraImage) {
         restoreImageCursor(currentHoveredImage);
         currentHoveredImage = null;
@@ -124,17 +151,13 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     pluginEnabled = Boolean(extensionSettings.pluginSwitch);
     if (pluginEnabled) {
         addMouseListener(document);
+        if (!isNovelMode()) {
+            scheduleGeneralSelectionUpdate();
+        }
     } else {
-        if (currentHoveredBlock && currentHoveredBlock !== lastClickedPtag) {
-            restoreOutline(currentHoveredBlock);
-        }
+        clearGeneralTranslationUi();
         Array.from(activeTranslationDivs).forEach(removeTranslationDiv);
-        Array.from(splitBlocks).forEach(restoreSentenceSplitting);
-        if (lastClickedPtag) {
-            restoreOutline(lastClickedPtag);
-        }
-        currentHoveredBlock = null;
-        lastClickedPtag = null;
+        clearNovelInteractionState();
         restoreImageCursor(currentHoveredImage);
         currentHoveredImage = null;
         if (notificationTimeout) {
@@ -147,6 +170,14 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
         }
     }
 });
+
+function normalizeTranslationMode(mode) {
+    return mode === 'general' ? 'general' : 'novel';
+}
+
+function isNovelMode() {
+    return normalizeTranslationMode(extensionSettings.translationMode) === 'novel';
+}
 
 
 /* ------------------------------------------------------------文本模块 */
@@ -700,7 +731,7 @@ function isManagedTranslationCacheKey(key) {
         legacyTranslationCachePrefixes.some(prefix => key.startsWith(prefix));
 }
 
-function getTranslationCacheKey(text, translator, fromLang, toLang, model) {
+function getTranslationCacheKey(text, translator, fromLang, toLang, model, mode = 'novel') {
     const textSignature = getTranslationTextSignature(text);
     const parts = [
         getPageCacheScope(),
@@ -710,6 +741,10 @@ function getTranslationCacheKey(text, translator, fromLang, toLang, model) {
         toLang || '',
         model || ''
     ];
+    // 保持轻小说模式的 v2 key 不变，常规模式另加身份，避免读取含假名的旧结果。
+    if (normalizeTranslationMode(mode) === 'general') {
+        parts.push('general');
+    }
     return `${translationCachePrefix}${parts.map(part => encodeURIComponent(String(part))).join(':')}`;
 }
 
@@ -840,10 +875,11 @@ function pruneTranslationCache() {
     }
 }
 
-async function getCachedTranslation(text, translator, fromLang, toLang, model) {
+async function getCachedTranslation(text, translator, fromLang, toLang, model, mode = 'novel') {
     if (!extensionSettings.translationCache) return null;
 
-    const key = getTranslationCacheKey(text, translator, fromLang, toLang, model);
+    const normalizedMode = normalizeTranslationMode(mode);
+    const key = getTranslationCacheKey(text, translator, fromLang, toLang, model, normalizedMode);
     const cached = await storageLocalGet(key);
     const textSignature = getTranslationTextSignature(text);
     if (
@@ -852,6 +888,7 @@ async function getCachedTranslation(text, translator, fromLang, toLang, model) {
         cached.textHash !== textSignature.hash ||
         cached.textLength !== textSignature.length ||
         cached.provider !== translator ||
+        (normalizedMode === 'general' && cached.mode !== 'general') ||
         isTranslationCacheExpired(cached) ||
         typeof cached.translatedText !== 'string' ||
         !cached.translatedText
@@ -872,10 +909,11 @@ async function getCachedTranslation(text, translator, fromLang, toLang, model) {
     };
 }
 
-function cacheTranslation(text, translator, fromLang, toLang, model, response) {
+function cacheTranslation(text, translator, fromLang, toLang, model, response, mode = 'novel') {
     if (!extensionSettings.translationCache || !response?.translatedText) return;
 
-    const key = getTranslationCacheKey(text, translator, fromLang, toLang, model);
+    const normalizedMode = normalizeTranslationMode(mode);
+    const key = getTranslationCacheKey(text, translator, fromLang, toLang, model, normalizedMode);
     const textSignature = getTranslationTextSignature(text);
     const entry = {
         version: translationCacheVersion,
@@ -886,6 +924,7 @@ function cacheTranslation(text, translator, fromLang, toLang, model, response) {
         from: fromLang || '',
         to: toLang || '',
         model: model || '',
+        mode: normalizedMode,
         translatedText: response.translatedText,
         furiganaAnnotations: Array.isArray(response.furiganaAnnotations)
             ? response.furiganaAnnotations
@@ -896,11 +935,12 @@ function cacheTranslation(text, translator, fromLang, toLang, model, response) {
     storageLocalSet({ [key]: entry }).then(pruneTranslationCache);
 }
 
-function renderTranslationResult(translationDiv, textObj, response, color, translator) {
+function renderTranslationResult(translationDiv, textObj, response, color, translator, mode = 'novel') {
     const body = getTranslationBody(translationDiv);
     const provider = response.provider || translator;
 
     if (
+        normalizeTranslationMode(mode) === 'novel' &&
         provider === 'deepseek' &&
         !body.querySelector(`.${extensionClasses.furiganaSource}`)
     ) {
@@ -940,7 +980,8 @@ function requestTranslation(tag, translationDiv, textObj, fromLang, toLang, tran
             from: fromLang,
             to: toLang,
             translator: translator,
-            model: model
+            model: model,
+            mode: 'novel'
         }, function(response) {
             if (!translationDiv.isConnected || !tag.contains(translationDiv)) {
                 return;
@@ -955,7 +996,7 @@ function requestTranslation(tag, translationDiv, textObj, fromLang, toLang, tran
                     provider: response.provider || translator
                 };
                 renderTranslationResult(translationDiv, textObj, normalizedResponse, color, translator);
-                cacheTranslation(text, translator, fromLang, toLang, model, normalizedResponse);
+                cacheTranslation(text, translator, fromLang, toLang, model, normalizedResponse, 'novel');
             } else {
                 renderTranslationError(translationDiv, color, response?.error || '翻译没有返回结果');
             }
@@ -1096,6 +1137,410 @@ function translate(tag) {
     }
 }
 
+/* ------------------------------------------------------------常规翻译模式 */
+
+function clearNovelInteractionState() {
+    if (currentHoveredBlock) {
+        restoreOutline(currentHoveredBlock);
+    }
+    if (lastClickedPtag && lastClickedPtag !== currentHoveredBlock) {
+        restoreOutline(lastClickedPtag);
+    }
+    Array.from(splitBlocks).forEach(restoreSentenceSplitting);
+    currentHoveredBlock = null;
+    lastClickedPtag = null;
+}
+
+function isGeneralUiNode(node) {
+    const element = node instanceof Element
+        ? node
+        : node?.parentElement;
+    return Boolean(element?.closest(
+        `.${extensionClasses.generalAction},` +
+        `.${extensionClasses.generalCard},` +
+        `.${extensionClasses.translation},` +
+        `.${extensionClasses.translationToggle},` +
+        `#${copyNotificationId}`
+    ));
+}
+
+function isExcludedSelectionNode(node) {
+    const element = node instanceof Element
+        ? node
+        : node?.parentElement;
+    if (!element || isGeneralUiNode(element)) return true;
+    return Boolean(element.closest(
+        'input,textarea,select,option,[contenteditable=""],[contenteditable="true"],[contenteditable="plaintext-only"]'
+    ));
+}
+
+function getRangeAnchorRect(range) {
+    if (!range) return null;
+    if (!range.commonAncestorContainer?.isConnected) return null;
+    const rects = Array.from(range.getClientRects?.() || [])
+        .filter(rect => rect.width > 0 || rect.height > 0);
+    const rect = rects[rects.length - 1] || range.getBoundingClientRect?.();
+    if (!rect || (!rect.width && !rect.height)) return null;
+    return {
+        left: rect.left,
+        right: rect.right,
+        top: rect.top,
+        bottom: rect.bottom,
+        width: rect.width,
+        height: rect.height
+    };
+}
+
+function readGeneralSelection() {
+    if (!pluginEnabled || isNovelMode()) return null;
+    const selection = document.getSelection();
+    if (!selection || selection.isCollapsed || selection.rangeCount === 0) return null;
+    if (
+        isExcludedSelectionNode(selection.anchorNode) ||
+        isExcludedSelectionNode(selection.focusNode)
+    ) {
+        return null;
+    }
+
+    const text = selection.toString().replace(/\r\n?/g, '\n').trim();
+    if (!text) return null;
+    const range = selection.getRangeAt(0).cloneRange();
+    const rect = getRangeAnchorRect(range);
+    if (!rect) return null;
+    return { text, range, rect };
+}
+
+function positionGeneralSelectionButton() {
+    if (!generalSelectionButton || !generalSelectionSnapshot) return;
+    const rect = getRangeAnchorRect(generalSelectionSnapshot.range) || generalSelectionSnapshot.rect;
+    if (!rect) {
+        generalSelectionButton.style.display = 'none';
+        return;
+    }
+    generalSelectionSnapshot.rect = rect;
+    const buttonRect = generalSelectionButton.getBoundingClientRect();
+    const width = buttonRect.width || 34;
+    const height = buttonRect.height || 34;
+    const gap = 8;
+    const left = Math.min(
+        Math.max(gap, rect.right + gap),
+        Math.max(gap, window.innerWidth - width - gap)
+    );
+    const top = Math.min(
+        Math.max(gap, rect.bottom + gap),
+        Math.max(gap, window.innerHeight - height - gap)
+    );
+    generalSelectionButton.style.display = '';
+    generalSelectionButton.style.left = `${Math.round(left)}px`;
+    generalSelectionButton.style.top = `${Math.round(top)}px`;
+}
+
+function positionGeneralTranslationCard() {
+    if (!generalTranslationCard || !generalSelectionSnapshot) return;
+    const rect = getRangeAnchorRect(generalSelectionSnapshot.range) || generalSelectionSnapshot.rect;
+    if (!rect) return;
+    generalSelectionSnapshot.rect = rect;
+    const gap = 10;
+    const cardRect = generalTranslationCard.getBoundingClientRect();
+    const width = cardRect.width || Math.min(380, window.innerWidth - gap * 2);
+    const height = cardRect.height || 120;
+    const left = Math.min(
+        Math.max(gap, rect.left),
+        Math.max(gap, window.innerWidth - width - gap)
+    );
+    const belowTop = rect.bottom + gap;
+    const top = belowTop + height <= window.innerHeight - gap
+        ? belowTop
+        : Math.max(gap, rect.top - height - gap);
+    generalTranslationCard.style.left = `${Math.round(left)}px`;
+    generalTranslationCard.style.top = `${Math.round(top)}px`;
+}
+
+function removeGeneralSelectionButton() {
+    generalSelectionButton?.remove();
+    generalSelectionButton = null;
+    stopGeneralDomObserverIfIdle();
+}
+
+function removeGeneralTranslationCard() {
+    generalRequestGeneration += 1;
+    generalTranslationCard?.remove();
+    generalTranslationCard = null;
+    stopGeneralDomObserverIfIdle();
+}
+
+function stopGeneralDomObserverIfIdle() {
+    if (generalSelectionButton || generalTranslationCard || !generalDomObserver) return;
+    generalDomObserver.disconnect();
+    generalDomObserver = null;
+}
+
+function clearGeneralTranslationUi() {
+    if (generalSelectionFrame !== null) {
+        cancelAnimationFrame(generalSelectionFrame);
+        generalSelectionFrame = null;
+    }
+    removeGeneralSelectionButton();
+    removeGeneralTranslationCard();
+    generalSelectionSnapshot = null;
+    generalDismissedSelectionSnapshot = null;
+    if (generalDomObserver) {
+        generalDomObserver.disconnect();
+        generalDomObserver = null;
+    }
+}
+
+function dismissGeneralTranslationUi() {
+    const dismissedSnapshot = generalSelectionSnapshot;
+    clearGeneralTranslationUi();
+    generalDismissedSelectionSnapshot = dismissedSnapshot;
+}
+
+function ensureGeneralDomObserver() {
+    if (generalDomObserver || !document.documentElement) return;
+    generalDomObserver = new MutationObserver(() => {
+        if (
+            generalSelectionSnapshot?.range?.commonAncestorContainer &&
+            !generalSelectionSnapshot.range.commonAncestorContainer.isConnected
+        ) {
+            clearGeneralTranslationUi();
+            return;
+        }
+        positionGeneralSelectionButton();
+        positionGeneralTranslationCard();
+    });
+    generalDomObserver.observe(document.documentElement, {
+        childList: true,
+        subtree: true
+    });
+}
+
+function createGeneralSelectionButton() {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = extensionClasses.generalAction;
+    button.textContent = '译';
+    button.title = '翻译选中文本';
+    button.setAttribute('aria-label', '翻译选中文本');
+    button.addEventListener('pointerdown', event => {
+        event.preventDefault();
+        event.stopPropagation();
+    });
+    button.addEventListener('click', event => {
+        event.preventDefault();
+        event.stopPropagation();
+        translateGeneralSelection();
+    });
+    (document.body || document.documentElement).appendChild(button);
+    ensureGeneralDomObserver();
+    return button;
+}
+
+function isSameGeneralSelection(first, second) {
+    if (!first?.range || !second?.range || first.text !== second.text) return false;
+    return first.range.startContainer === second.range.startContainer &&
+        first.range.startOffset === second.range.startOffset &&
+        first.range.endContainer === second.range.endContainer &&
+        first.range.endOffset === second.range.endOffset;
+}
+
+function updateGeneralSelectionUi() {
+    generalSelectionFrame = null;
+    const snapshot = readGeneralSelection();
+    if (!snapshot) {
+        generalDismissedSelectionSnapshot = null;
+        removeGeneralSelectionButton();
+        return;
+    }
+
+    if (isSameGeneralSelection(generalDismissedSelectionSnapshot, snapshot)) {
+        removeGeneralSelectionButton();
+        return;
+    }
+    generalDismissedSelectionSnapshot = null;
+
+    const sameSelection = isSameGeneralSelection(generalSelectionSnapshot, snapshot);
+    if (!sameSelection) {
+        removeGeneralTranslationCard();
+    }
+    generalSelectionSnapshot = snapshot;
+    if (sameSelection && generalTranslationCard) {
+        removeGeneralSelectionButton();
+        positionGeneralTranslationCard();
+        return;
+    }
+    if (!generalSelectionButton) {
+        generalSelectionButton = createGeneralSelectionButton();
+    }
+    positionGeneralSelectionButton();
+}
+
+function scheduleGeneralSelectionUpdate() {
+    if (!pluginEnabled || isNovelMode() || generalSelectionFrame !== null) return;
+    generalSelectionFrame = requestAnimationFrame(updateGeneralSelectionUi);
+}
+
+function createGeneralTranslationCard() {
+    removeGeneralTranslationCard();
+    const card = document.createElement('section');
+    card.className = extensionClasses.generalCard;
+    card.setAttribute('role', 'dialog');
+    card.setAttribute('aria-label', '选中文本的翻译结果');
+
+    const header = document.createElement('div');
+    header.className = 'anontranslator-general-card-header';
+    const title = document.createElement('strong');
+    title.textContent = '翻译结果';
+    const close = document.createElement('button');
+    close.type = 'button';
+    close.className = 'anontranslator-general-close';
+    close.textContent = '×';
+    close.title = '关闭翻译';
+    close.setAttribute('aria-label', '关闭翻译');
+    close.addEventListener('click', event => {
+        event.preventDefault();
+        event.stopPropagation();
+        dismissGeneralTranslationUi();
+    });
+    header.append(title, close);
+
+    const body = document.createElement('div');
+    body.className = extensionClasses.generalCardBody;
+    card.append(header, body);
+    (document.body || document.documentElement).appendChild(card);
+    ensureGeneralDomObserver();
+    generalTranslationCard = card;
+    positionGeneralTranslationCard();
+    return body;
+}
+
+function getGeneralProviderConfigs() {
+    const providers = [];
+    if (extensionSettings.google) {
+        providers.push({
+            translator: 'google',
+            label: 'Google',
+            color: extensionSettings.googleColor,
+            from: extensionSettings.googleFrom,
+            to: extensionSettings.googleTo,
+            model: undefined
+        });
+    }
+    if (extensionSettings.deepseek) {
+        providers.push({
+            translator: 'deepseek',
+            label: 'DeepSeek',
+            color: extensionSettings.deepseekColor,
+            from: extensionSettings.deepseekFrom,
+            to: extensionSettings.deepseekTo,
+            model: extensionSettings.deepseekModel
+        });
+    }
+    return providers;
+}
+
+function createGeneralProviderResult(body, provider) {
+    const result = document.createElement('div');
+    result.className = extensionClasses.generalResult;
+    result.dataset.translationProvider = provider.translator;
+    result.style.color = provider.color;
+    const label = document.createElement('strong');
+    label.className = 'anontranslator-general-provider';
+    label.textContent = provider.label;
+    const text = document.createElement('div');
+    text.className = 'anontranslator-general-result-text';
+    text.textContent = '翻译中…';
+    text.setAttribute('role', 'status');
+    result.append(label, text);
+    body.appendChild(result);
+    return text;
+}
+
+function requestGeneralTranslation(text, provider, resultNode, generation) {
+    try {
+        chrome.runtime.sendMessage({
+            action: 'translate',
+            text,
+            from: provider.from,
+            to: provider.to,
+            translator: provider.translator,
+            model: provider.model,
+            mode: 'general'
+        }, response => {
+            if (
+                generation !== generalRequestGeneration ||
+                !generalTranslationCard?.isConnected ||
+                !resultNode.isConnected
+            ) return;
+            if (chrome.runtime.lastError) {
+                resultNode.textContent = `翻译失败：${chrome.runtime.lastError.message}`;
+            } else if (response?.ok && response.translatedText) {
+                resultNode.textContent = response.translatedText;
+                cacheTranslation(
+                    text,
+                    provider.translator,
+                    provider.from,
+                    provider.to,
+                    provider.model,
+                    { ...response, provider: response.provider || provider.translator },
+                    'general'
+                );
+            } else {
+                resultNode.textContent = `翻译失败：${response?.error || '翻译没有返回结果'}`;
+            }
+            positionGeneralTranslationCard();
+        });
+    } catch (_) {
+        resultNode.textContent = '翻译失败：扩展已更新或重新加载，请刷新页面后重试';
+        positionGeneralTranslationCard();
+    }
+}
+
+async function renderCachedOrRequestGeneralTranslation(text, provider, resultNode, generation) {
+    const cached = await getCachedTranslation(
+        text,
+        provider.translator,
+        provider.from,
+        provider.to,
+        provider.model,
+        'general'
+    );
+    if (
+        generation !== generalRequestGeneration ||
+        !generalTranslationCard?.isConnected ||
+        !resultNode.isConnected
+    ) return;
+    if (cached) {
+        resultNode.textContent = cached.translatedText;
+        resultNode.title = '已读取缓存';
+        positionGeneralTranslationCard();
+        return;
+    }
+    requestGeneralTranslation(text, provider, resultNode, generation);
+}
+
+function translateGeneralSelection() {
+    if (!pluginEnabled || isNovelMode() || !generalSelectionSnapshot?.text) return;
+    const text = generalSelectionSnapshot.text;
+    removeGeneralSelectionButton();
+    const body = createGeneralTranslationCard();
+    const generation = generalRequestGeneration;
+    const providers = getGeneralProviderConfigs();
+    if (providers.length === 0) {
+        const empty = document.createElement('div');
+        empty.className = extensionClasses.generalResult;
+        empty.textContent = '请先在插件设置中启用 Google 或 DeepSeek 翻译。';
+        body.appendChild(empty);
+        positionGeneralTranslationCard();
+        return;
+    }
+    providers.forEach(provider => {
+        const resultNode = createGeneralProviderResult(body, provider);
+        renderCachedOrRequestGeneralTranslation(text, provider, resultNode, generation);
+    });
+    positionGeneralTranslationCard();
+}
+
 /* ------------------------------------------------------------用户界面交互模块 */
 
 // 按标点和长度拆分纯文本，并用 DOM API 创建安全的句子节点。
@@ -1205,7 +1650,7 @@ function getSafeImageUrl(image) {
 
 // 处理点击事件
 function handleClick(event) {
-    if (!pluginEnabled || event.button !== 0) return;
+    if (!pluginEnabled || !isNovelMode() || event.button !== 0) return;
 
     const clickedElement = event.target instanceof Element ? event.target : null;
     if (clickedElement?.closest('img, svg image')) return;
@@ -1257,7 +1702,7 @@ function applyBlueBorder(tag, callback) {
 // 为指定标签添加预选框，并绑定点击事件
 function highlightAndCopyPtag(doc) {
     doc.addEventListener('mouseover', (event) => {
-        if (!pluginEnabled) return;
+        if (!pluginEnabled || !isNovelMode()) return;
 
         const targetElement = findReadableBlockFromEvent(event);
         if (targetElement === currentHoveredBlock) return;
@@ -1284,7 +1729,7 @@ function highlightAndCopyPtag(doc) {
     }, true);
 
     doc.addEventListener('mouseout', (event) => {
-        if (!pluginEnabled) return;
+        if (!pluginEnabled || !isNovelMode()) return;
 
         const fromElement = findReadableBlockFromEvent(event);
         const toElement = findReadableBlockFromNode(event.relatedTarget);
@@ -1303,8 +1748,31 @@ function highlightAndCopyPtag(doc) {
     }, true);
 
     doc.addEventListener('click', handleClick, true);
-    window.addEventListener('scroll', scheduleTranslationTogglePositions, true);
-    window.addEventListener('resize', scheduleTranslationTogglePositions);
+    window.addEventListener('scroll', () => {
+        scheduleTranslationTogglePositions();
+        positionGeneralSelectionButton();
+        positionGeneralTranslationCard();
+    }, true);
+    window.addEventListener('resize', () => {
+        scheduleTranslationTogglePositions();
+        positionGeneralSelectionButton();
+        positionGeneralTranslationCard();
+    });
+
+    // 拖选过程中 selectionchange 会连续触发；只在松开指针或键盘操作结束后显示按钮。
+    doc.addEventListener('pointerup', scheduleGeneralSelectionUpdate, true);
+    doc.addEventListener('keyup', scheduleGeneralSelectionUpdate, true);
+    doc.addEventListener('pointerdown', event => {
+        if (!pluginEnabled || isNovelMode() || isGeneralUiNode(event.target)) return;
+        if (generalTranslationCard || generalSelectionButton) {
+            dismissGeneralTranslationUi();
+        }
+    }, true);
+    doc.addEventListener('keydown', event => {
+        if (event.key === 'Escape' && !isNovelMode()) {
+            dismissGeneralTranslationUi();
+        }
+    }, true);
 }
 
 // 为文档添加鼠标监听器
@@ -1316,7 +1784,7 @@ function addMouseListener(doc) {
 
     // 仅在扩展生成的句子上接管右键，用于复制当前句子。
     doc.addEventListener('contextmenu', function(event) {
-        if (!pluginEnabled || !extensionSettings.copy) return;
+        if (!pluginEnabled || !isNovelMode() || !extensionSettings.copy) return;
 
         const targetElement = event.target instanceof Element ? event.target : null;
         const sentence = targetElement?.closest(`.${extensionClasses.sentence}`);
@@ -1331,7 +1799,7 @@ function addMouseListener(doc) {
 
         const targetElement = event.target instanceof Element ? event.target : null;
         const sentence = targetElement?.closest(`.${extensionClasses.sentence}`);
-        if (sentence) {
+        if (isNovelMode() && sentence) {
             sentence.style.backgroundColor = extensionSettings.sentenceColor;
         }
 
@@ -1351,7 +1819,7 @@ function addMouseListener(doc) {
 
         const targetElement = event.target instanceof Element ? event.target : null;
         const sentence = targetElement?.closest(`.${extensionClasses.sentence}`);
-        if (sentence && !sentence.contains(event.relatedTarget)) {
+        if (isNovelMode() && sentence && !sentence.contains(event.relatedTarget)) {
             sentence.style.backgroundColor = '';
         }
 

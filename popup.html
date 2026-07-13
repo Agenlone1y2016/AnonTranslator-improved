@@ -21,6 +21,15 @@
         <p class="text-s1">By: raindrop213</p>
       </div>
 
+      <div class="translation-mode-setting">
+        <label for="translationMode">翻译模式</label>
+        <select id="translationMode" aria-label="选择翻译模式">
+          <option value="novel">日语轻小说</option>
+          <option value="general">常规翻译</option>
+        </select>
+        <p id="translationModeHint" class="translation-mode-hint" aria-live="polite"></p>
+      </div>
+
       <div class="tabs">
         <!-- Copy Tab -->
         <input type="radio" id="tab1" name="tab" class="tab" checked />
@@ -208,8 +217,10 @@
         <div class="tab-content">
           <h2>使用说明</h2>
           <ul class="custom-list">
-            <li>左键点击文本段落：复制并翻译。</li>
-            <li>启用 DeepSeek 时，一次请求同时显示译文和词语级假名原文行。</li>
+            <li>日语轻小说模式：左键点击文本段落进行复制和翻译。</li>
+            <li>日语轻小说模式启用 DeepSeek 时，一次请求同时显示译文和词语级假名原文行。</li>
+            <li>常规翻译模式：手动选中任意网页文本，再点击选区旁的翻译按钮。</li>
+            <li>常规翻译只显示译文，不标注假名，也不会提示或接管段落点击。</li>
             <li>点击翻译结果旁的小三角：展开或收起该段的假名标注和译文。</li>
             <li>启用保存翻译结果后，刷新页面再点击相同段落会优先读取本机缓存。</li>
             <li>Translator 里的 Clear Cache 按钮可随时一键清除本机已保存的译文。</li>

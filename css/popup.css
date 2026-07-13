@@ -13,6 +13,34 @@ body {
   width: 350px;
 }
 
+.translation-mode-setting {
+  padding: 10px 12px;
+  color: white;
+  background: var(--color3);
+}
+
+.translation-mode-setting > label {
+  display: block;
+  margin-bottom: 6px;
+  font-weight: bold;
+}
+
+.translation-mode-setting select {
+  min-height: 34px;
+  padding: 4px 8px;
+  color: #221311;
+  background: white;
+  border: 1px solid var(--color1);
+  border-radius: 5px;
+}
+
+.translation-mode-hint {
+  min-height: 1.25em;
+  margin: 6px 0 0;
+  font: 12px/1.4 Arial, sans-serif;
+  opacity: 0.86;
+}
+
 ::-webkit-scrollbar {
   width: 8px; /* 设置滚动条的宽度 */
   height: 8px; /* 设置水平滚动条的高度 */
