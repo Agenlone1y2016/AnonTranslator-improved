@@ -111,6 +111,29 @@ assert.throws(
     { start: 0, end: 4, reading: 'まほうがっこう' }
   ]);
 
+  context.fetch = async (url, options) => {
+    capturedRequest = { url, body: JSON.parse(options.body) };
+    return new Response(JSON.stringify({
+      choices: [{
+        finish_reason: 'stop',
+        message: {
+          content: JSON.stringify({
+            translation: '常规译文',
+            annotations: [{ surface: 'ignored', reading: 'ignored' }]
+          })
+        }
+      }]
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  };
+  const generalResult = JSON.parse(JSON.stringify(
+    await evaluate("deepseekTranslate('General English text', 'auto', 'zh-CN', 'deepseek-v4-flash', 'general')")
+  ));
+  assert.equal(generalResult.translatedText, '常规译文');
+  assert.deepEqual(generalResult.furiganaAnnotations, []);
+  assert.ok(capturedRequest.body.messages[0].content.includes('专业翻译'));
+  assert.ok(!capturedRequest.body.messages[0].content.includes('振假名标注器'));
+  assert.ok(capturedRequest.body.messages[1].content.includes('General English text'));
+
   context.fetch = async () => new Response(JSON.stringify({
     choices: [{ finish_reason: 'length', message: { content: '{}' } }]
   }), { status: 200, headers: { 'Content-Type': 'application/json' } });

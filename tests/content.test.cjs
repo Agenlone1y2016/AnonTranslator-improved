@@ -58,6 +58,7 @@ function loadPage({
     ...settings
   };
   const translateCalls = [];
+  const storageChangeListeners = [];
 
   window.chrome = {
     runtime: {
@@ -90,7 +91,9 @@ function loadPage({
         set(_values, callback) { if (callback) callback(); }
       },
       local: localAreaOverrides || createLocalStorageArea(localStore),
-      onChanged: { addListener() {} }
+      onChanged: {
+        addListener(listener) { storageChangeListeners.push(listener); }
+      }
     }
   };
 
@@ -98,9 +101,26 @@ function loadPage({
   if (typeof window.Range.prototype.getClientRects !== 'function') {
     window.Range.prototype.getClientRects = function () { return []; };
   }
+  if (typeof window.Range.prototype.getBoundingClientRect !== 'function') {
+    window.Range.prototype.getBoundingClientRect = function () {
+      return { left: 40, right: 180, top: 40, bottom: 60, width: 140, height: 20 };
+    };
+  }
 
   window.eval(contentSource);
-  return { dom, window, document: window.document, translateCalls, localStore };
+  return {
+    dom,
+    window,
+    document: window.document,
+    translateCalls,
+    localStore,
+    changeSyncSetting(key, value) {
+      pageSettings[key] = value;
+      storageChangeListeners.forEach(listener => listener({
+        [key]: { oldValue: undefined, newValue: value }
+      }, 'sync'));
+    }
+  };
 }
 
 function click(window, element) {
@@ -115,6 +135,40 @@ function click(window, element) {
 
 function flush(ms = 40) {
   return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function selectText(
+  window,
+  startNode,
+  startOffset,
+  endNode = startNode,
+  endOffset = null,
+  complete = true
+) {
+  const range = window.document.createRange();
+  range.setStart(startNode, startOffset);
+  range.setEnd(endNode, endOffset ?? endNode.nodeValue.length);
+  range.getClientRects = () => [{
+    left: 40,
+    right: 180,
+    top: 40,
+    bottom: 60,
+    width: 140,
+    height: 20
+  }];
+  range.getBoundingClientRect = () => range.getClientRects()[0];
+  const selection = window.getSelection();
+  selection.removeAllRanges();
+  selection.addRange(range);
+  window.document.dispatchEvent(new window.Event('selectionchange'));
+  if (complete) {
+    window.document.dispatchEvent(new window.MouseEvent('pointerup', {
+      bubbles: true,
+      cancelable: true,
+      button: 0,
+      view: window
+    }));
+  }
 }
 
 function translationTextOf(tag) {
@@ -331,6 +385,161 @@ function translationTextOf(tag) {
       'storage failures must not block translation'
     );
     page.dom.window.close();
+  }
+
+  // 常规模式：段落点击完全不接管；任意选区显示按钮并只翻译选中的文本。
+  {
+    const page = loadPage({
+      html: '<p id="g1">Translate only this phrase.</p><p id="g2">Second paragraph.</p>',
+      settings: {
+        translationMode: 'general',
+        deepseekFrom: 'auto',
+        deepseekTo: 'zh-CN'
+      }
+    });
+    const g1 = page.document.getElementById('g1');
+    const g2 = page.document.getElementById('g2');
+
+    click(page.window, g1);
+    await flush();
+    assert.equal(page.translateCalls.length, 0, 'general mode must not translate paragraph clicks');
+    assert.equal(g1.classList.contains('anontranslator-selected'), false);
+    assert.equal(g1.querySelector('.anontranslator-sentence'), null);
+
+    selectText(page.window, g1.firstChild, 0, g1.firstChild, 14, false);
+    await flush();
+    assert.equal(
+      page.document.querySelector('.anontranslator-general-action'),
+      null,
+      'the translate action must stay hidden while the pointer selection is still changing'
+    );
+    page.document.dispatchEvent(new page.window.MouseEvent('pointerup', {
+      bubbles: true,
+      cancelable: true,
+      button: 0,
+      view: page.window
+    }));
+    await flush();
+    const action = page.document.querySelector('.anontranslator-general-action');
+    assert.ok(action, 'a non-empty page selection should show the translate action');
+    click(page.window, action);
+    await flush();
+
+    assert.equal(page.translateCalls.length, 1);
+    assert.equal(page.translateCalls[0].text, 'Translate only');
+    assert.equal(page.translateCalls[0].mode, 'general');
+    assert.ok(
+      page.document.querySelector('.anontranslator-general-card').textContent.includes('译:Translate only')
+    );
+    assert.equal(
+      page.document.querySelector('.anontranslator-furigana-source-line'),
+      null,
+      'general translation never renders furigana'
+    );
+    page.document.dispatchEvent(new page.window.Event('selectionchange'));
+    await flush();
+    assert.equal(
+      page.document.querySelector('.anontranslator-general-action'),
+      null,
+      'the action must stay hidden while the same selection already has a result card'
+    );
+
+    // 新的跨段选区替换旧卡片；Esc 清理全部常规模式 UI。
+    selectText(page.window, g1.firstChild, 10, g2.firstChild, 6);
+    await flush();
+    assert.equal(page.document.querySelector('.anontranslator-general-card'), null);
+    assert.ok(page.document.querySelector('.anontranslator-general-action'));
+    page.document.dispatchEvent(new page.window.KeyboardEvent('keydown', {
+      key: 'Escape', bubbles: true
+    }));
+    page.document.dispatchEvent(new page.window.KeyboardEvent('keyup', {
+      key: 'Escape', bubbles: true
+    }));
+    await flush();
+    assert.equal(page.document.querySelector('.anontranslator-general-action'), null);
+    assert.equal(page.document.querySelector('.anontranslator-general-card'), null);
+    page.dom.window.close();
+  }
+
+  // 常规模式忽略可编辑区域，避免接管表单或编辑器里的选择。
+  {
+    const page = loadPage({
+      html: '<div id="editor" contenteditable="true">Editable English text</div>',
+      settings: { translationMode: 'general' }
+    });
+    const text = page.document.getElementById('editor').firstChild;
+    selectText(page.window, text, 0, text, 8);
+    await flush();
+    assert.equal(page.document.querySelector('.anontranslator-general-action'), null);
+    page.dom.window.close();
+  }
+
+  // 模式即时切换：清理轻小说交互状态、保留已有译文，并启用选区翻译。
+  {
+    const page = loadPage({
+      html: '<p id="m1">一つ目の段落。</p><p id="m2">General selection text.</p>'
+    });
+    const m1 = page.document.getElementById('m1');
+    const m2 = page.document.getElementById('m2');
+    click(page.window, m1);
+    await flush();
+    assert.equal(page.translateCalls.length, 1);
+    assert.ok(translationTextOf(m1));
+
+    page.changeSyncSetting('translationMode', 'general');
+    await flush();
+    assert.ok(translationTextOf(m1), 'existing novel translation should remain visible');
+    assert.equal(m1.classList.contains('anontranslator-selected'), false);
+
+    click(page.window, m2);
+    await flush();
+    assert.equal(page.translateCalls.length, 1, 'paragraph clicks stop after switching mode');
+    selectText(page.window, m2.firstChild, 0, m2.firstChild, 7);
+    await flush();
+    click(page.window, page.document.querySelector('.anontranslator-general-action'));
+    await flush();
+    assert.equal(page.translateCalls.length, 2);
+    assert.equal(page.translateCalls[1].mode, 'general');
+
+    page.changeSyncSetting('translationMode', 'novel');
+    assert.equal(page.document.querySelector('.anontranslator-general-card'), null);
+    page.dom.window.close();
+  }
+
+  // 相同文本在轻小说与常规模式使用不同缓存；常规模式自身可再次命中。
+  {
+    const store = {};
+    const html = '<p id="cache-mode">Same text</p>';
+    const novel = loadPage({ html, settings: { translationCache: true }, localStore: store });
+    click(novel.window, novel.document.getElementById('cache-mode'));
+    await flush();
+    assert.equal(novel.translateCalls.length, 1);
+    novel.dom.window.close();
+
+    const general1 = loadPage({
+      html,
+      settings: { translationMode: 'general', translationCache: true },
+      localStore: store
+    });
+    selectText(general1.window, general1.document.getElementById('cache-mode').firstChild, 0);
+    await flush();
+    click(general1.window, general1.document.querySelector('.anontranslator-general-action'));
+    await flush();
+    assert.equal(general1.translateCalls.length, 1, 'general mode must not reuse novel cache');
+    general1.dom.window.close();
+
+    const general2 = loadPage({
+      html,
+      settings: { translationMode: 'general', translationCache: true },
+      localStore: store
+    });
+    selectText(general2.window, general2.document.getElementById('cache-mode').firstChild, 0);
+    await flush();
+    click(general2.window, general2.document.querySelector('.anontranslator-general-action'));
+    await flush();
+    assert.equal(general2.translateCalls.length, 0, 'general mode should reuse its own cache');
+    assert.ok(general2.document.querySelector('.anontranslator-general-card').textContent.includes('译:Same text'));
+    general2.dom.window.close();
   }
 
   // 总开关关闭：不响应点击，也不向页面注入任何节点。

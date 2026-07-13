@@ -28,6 +28,10 @@ document.addEventListener('DOMContentLoaded', () => {
     updateBackgroundImage(event.target.checked);
   });
 
+  document.getElementById('translationMode').addEventListener('change', event => {
+    persistTranslationMode(event.target.value);
+  });
+
   document.getElementById('clearTranslationCache').addEventListener('click', clearTranslationCache);
 });
 
@@ -50,6 +54,27 @@ function applySettingsToForm(settings) {
   }
 }
 
+function updateTranslationModeHint(mode) {
+  const hint = document.getElementById('translationModeHint');
+  if (!hint) return;
+  hint.textContent = mode === 'general'
+    ? '选中文本后，点击选区旁的按钮翻译。'
+    : '悬停并点击段落，显示译文和日语假名。';
+}
+
+function persistTranslationMode(mode) {
+  const normalizedMode = mode === 'general' ? 'general' : 'novel';
+  updateTranslationModeHint(normalizedMode);
+  chrome.storage.sync.set({ translationMode: normalizedMode }, () => {
+    if (chrome.runtime.lastError) {
+      console.error('[AnonTranslator II] Failed to switch translation mode:', chrome.runtime.lastError.message);
+      showSaveState('error', 'error');
+      return;
+    }
+    showSaveState('已切换', 'saved');
+  });
+}
+
 function loadSettings() {
   chrome.runtime.sendMessage({ type: 'getSettings' }, settings => {
     if (chrome.runtime.lastError || !settings || settings.error) {
@@ -59,13 +84,19 @@ function loadSettings() {
           showSaveState('error', 'error');
           return;
         }
-        applySettingsToForm(syncSettings);
+        const fallbackSettings = {
+          translationMode: 'novel',
+          ...syncSettings
+        };
+        applySettingsToForm(fallbackSettings);
         updateBackgroundImage(Boolean(syncSettings.pluginSwitch));
+        updateTranslationModeHint(fallbackSettings.translationMode);
       });
       return;
     }
     applySettingsToForm(settings);
     updateBackgroundImage(Boolean(settings.pluginSwitch));
+    updateTranslationModeHint(settings.translationMode);
   });
 
   chrome.storage.local.get(['deepseekApiKey'], localSettings => {

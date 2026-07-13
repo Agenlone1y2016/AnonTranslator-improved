@@ -68,6 +68,9 @@
 
     const settings = {
       pluginSwitch: true,
+      translationMode: new URLSearchParams(location.search).get("mode") === "general"
+        ? "general"
+        : "novel",
       copy: false,
       ignoreFurigana: true,
       showCopyContent: false,
